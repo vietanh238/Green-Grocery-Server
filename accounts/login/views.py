@@ -21,6 +21,7 @@ class LoginView(APIView):
                 })
 
             refresh = RefreshToken.for_user(user)
+
             return Response({
                 'status': '1',
                 'data': {
@@ -33,3 +34,7 @@ class LoginView(APIView):
                 }
             })
 
+        return Response({
+            'status': '2',
+            'message': 'Incorrect account'
+        })
