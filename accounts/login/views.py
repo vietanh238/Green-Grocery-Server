@@ -20,7 +20,8 @@ class LoginView(APIView):
                         'status': '2',
                         'response': {
                             "error_code": "1",
-                            "error_message": "User is not active"
+                            "error_message_us": "User is not active",
+                            "error_message_vn": "Tài khoản không còn hoạt động"
                         }
                     })
 
@@ -54,7 +55,8 @@ class LoginView(APIView):
                     'status': '2',
                     'response': {
                         "error_code": "1",
-                        "error_message": "Account incorrect"
+                        "error_message_us": "Account incorrect",
+                        "error_message_vn": "Tài khoản không chính xác"
                     }
                 })
 
@@ -63,6 +65,7 @@ class LoginView(APIView):
                 'status': '2',
                 'response': {
                     "error_code": "9999",
-                    "error_message": "System error"
+                    "error_message_us": "System error",
+                    "error_message_vn": "Lỗi hệ thống"
                 }
             })
