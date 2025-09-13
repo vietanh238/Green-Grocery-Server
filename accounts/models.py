@@ -37,16 +37,15 @@ class User(AbstractBaseUser, PermissionsMixin):
         blank=False,
         null=False
     )
-
     email = models.EmailField(_('email address'), blank=True, null=True)
     first_name = models.CharField(_('first name'), max_length=150, blank=True)
     last_name  = models.CharField(_('last name'), max_length=150, blank=True)
-
     is_active = models.BooleanField(_('active'), default=True)
     is_staff  = models.BooleanField(_('staff status'), default=False)
     date_joined = models.DateTimeField(_('date joined'), default=timezone.now)
     created_at  = models.DateTimeField(_('created at'), auto_now_add=True)
     updated_at  = models.DateTimeField(_('updated at'), auto_now=True)
+    is_change_pass = models.BooleanField(default=False)
 
     objects = UserManager()
 
