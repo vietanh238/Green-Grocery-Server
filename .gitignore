@@ -29,3 +29,5 @@ staticfiles/
 # System
 .DS_Store
 Thumbs.db
+192.168.0.101+2-key.pem
+192.168.0.101+2.pem

@@ -9,9 +9,9 @@ SECRET_KEY = 'django-insecure-74oo77s83#4b5u2#4zd7^l-8+8g#&=el0xl=bh$i4q4!^2x(^=
 
 DEBUG = True
 
-ALLOWED_HOSTS = []
 
 INSTALLED_APPS = [
+    'django_extensions',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -37,12 +37,14 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
 
-CORS_ALLOWED_ORIGINS = [
-    "http://localhost:4200",
-    "http://127.0.0.1:4200",
-]
-
+# CORS_ALLOWED_ORIGINS = [
+#     "http://localhost:4200",
+#     "http://127.0.0.1:4200",
+#     "http://192.168.0.102:4200"
+# ]
+ALLOWED_HOSTS = ["*", "192.168.0.101", "localhost", "https://192.168.0.101:4200"]
 ROOT_URLCONF = 'Server.urls'
+CORS_ALLOW_ALL_ORIGINS = True
 
 TEMPLATES = [
     {
