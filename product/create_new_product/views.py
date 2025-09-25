@@ -39,7 +39,7 @@ class CreateProduct(APIView):
             return Response({
                 'status': '1',
                 'response': {
-                    'message': 'Product created successfully.',
+                    'status': '1',
                     'product': serializer.data
                 }
             }, status=status.HTTP_201_CREATED)
@@ -52,4 +52,4 @@ class CreateProduct(APIView):
                     "error_message_us": "An internal server error occurred.",
                     "error_message_vn": "Lỗi hệ thống"
                 }
-            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            })
