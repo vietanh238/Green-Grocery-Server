@@ -30,7 +30,7 @@ class CreateProduct(APIView):
                 return Response({
                     'status': '2',
                     'response': serializer.errors
-                }, status=status.HTTP_400_BAD_REQUEST)
+                })
 
 
             with transaction.atomic():
