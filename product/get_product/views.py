@@ -21,6 +21,7 @@ class GetProduct(APIView):
                 "name", "sku", "bar_code", "name_category", "unit",
                 "price", "is_reorder", "stock_quantity"
             )
+            list_product = list_product.order_by('stock_quantity')[:100]
 
             return Response({
                 "status": "1",

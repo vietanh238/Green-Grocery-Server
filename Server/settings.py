@@ -43,7 +43,7 @@ MIDDLEWARE = [
 #     "http://127.0.0.1:4200",
 #     "http://192.168.0.102:4200"
 # ]
-ALLOWED_HOSTS = ["*", "192.168.0.101", "localhost", "https://192.168.0.101:4200", "https://192.168.0.100:4200"]
+ALLOWED_HOSTS = ["*", "192.168.0.102", "localhost", "https://192.168.0.101:4200", "https://192.168.0.102:4200"]
 ROOT_URLCONF = 'Server.urls'
 CORS_ALLOW_ALL_ORIGINS = True
 
