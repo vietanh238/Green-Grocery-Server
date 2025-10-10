@@ -2,6 +2,7 @@
 from pathlib import Path
 from datetime import timedelta
 from decouple import config
+from corsheaders.defaults import default_headers
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -9,7 +10,9 @@ SECRET_KEY = 'django-insecure-74oo77s83#4b5u2#4zd7^l-8+8g#&=el0xl=bh$i4q4!^2x(^=
 
 DEBUG = True
 
-
+CORS_ALLOW_HEADERS = list(default_headers) + [
+    'ngrok-skip-browser-warning',
+]
 INSTALLED_APPS = [
     'django_extensions',
     'django.contrib.admin',
@@ -24,7 +27,8 @@ INSTALLED_APPS = [
     'rest_framework',
     'accounts',
     'home',
-    'product'
+    'product',
+    'sell'
 ]
 
 MIDDLEWARE = [
