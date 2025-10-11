@@ -58,8 +58,7 @@ class CreatePaymentView(APIView):
                     amount=amount,
                     description=description,
                     return_url=return_url,
-                    cancel_url=cancel_url,
-                    buyer=buyer
+                    cancel_url=cancel_url
                 )
             except Exception as e:
                 return Response(
@@ -89,36 +88,39 @@ class CreatePaymentView(APIView):
 
 class WebhookView(APIView):
 
+    def get(self, request):
+        return Response({"message": "Webhook URL is verified."}, status=status.HTTP_200_OK)
+
     def post(self, request):
         payload = request.data
+        signature = payload['signature']
+        data_from_payload = payload.get("data")
+        data_from_payload['signature'] = signature
+        if not data_from_payload or not isinstance(data_from_payload, dict):
+            return Response({"status": "ok", "message": "Webhook URL verified successfully"}, status=status.HTTP_200_OK)
+
         try:
-            is_valid = verify_checksum(payload, CHECKSUM_KEY, checksum_field="checksum")
-        except Exception:
+            is_valid = verify_checksum(data_from_payload, CHECKSUM_KEY, checksum_field="signature")
+        except Exception as e:
+            print(f"Lỗi khi xác thực checksum: {e}")
             is_valid = False
 
         if not is_valid:
             return Response({"error": "Invalid checksum"}, status=status.HTTP_400_BAD_REQUEST)
 
-        order_code = payload.get("orderCode")
-        status_str = payload.get("status")
-        transaction_id = payload.get("transactionId")
-
-        if not order_code:
-            return Response({"error": "Missing orderCode"}, status=status.HTTP_400_BAD_REQUEST)
+        order_code = data_from_payload.get("orderCode")
+        transaction_id = data_from_payload.get("paymentLinkId")
 
         try:
             payment = Payment.objects.get(order_code=order_code)
         except Payment.DoesNotExist:
             return Response({"error": "Order not found"}, status=status.HTTP_404_NOT_FOUND)
 
-        if status_str == "PAID":
+        payment_status_code = payload.get("code")
+        if payment_status_code == "00":
             payment.status = "paid"
-        elif status_str == "CANCELED":
-            payment.status = "canceled"
-        elif status_str == "FAILED":
-            payment.status = "failed"
         else:
-            payment.status = "unknown"
+            payment.status = "failed"
 
         if transaction_id:
             payment.transaction_id = transaction_id
@@ -126,3 +128,4 @@ class WebhookView(APIView):
         payment.save()
 
         return Response({"status": "ok"}, status=status.HTTP_200_OK)
+

@@ -1,7 +1,8 @@
 from django.urls import path
 from .views import CreatePaymentView, WebhookView
+from django.views.decorators.csrf import csrf_exempt
 
 urlpatterns = [
     path("create/", CreatePaymentView.as_view(), name="payments-create"),
-    path("webhook/", WebhookView.as_view(), name="payments-webhook"),
+    path("webhook/", csrf_exempt(WebhookView.as_view()), name="payments-webhook"),
 ]
