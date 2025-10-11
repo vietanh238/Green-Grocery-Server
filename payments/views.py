@@ -5,7 +5,8 @@ from django.db import transaction
 import os
 import json
 from decouple import config
-
+from channels.layers import get_channel_layer
+from asgiref.sync import async_to_sync
 
 from .models import Payment
 from .services import create_payment_request
@@ -126,6 +127,38 @@ class WebhookView(APIView):
             payment.transaction_id = transaction_id
 
         payment.save()
+        if payment.status == "paid":
+                    user_id = getattr(payment, "user_id", None)
+                    amount = getattr(payment, "amount", None)
 
+                    if user_id:
+                        notify_payment_success(user_id=user_id, order_id=payment.order_code, amount=amount)
+                    else:
+                        channel_layer = get_channel_layer()
+                        async_to_sync(channel_layer.group_send)(
+                            "broadcast",
+                            {
+                                "type": "payment_success",
+                                "data": {
+                                    "orderId": payment.order_code,
+                                    "amount": amount,
+                                    "message": "Thanh toán thành công (broadcast)"
+                                }
+                            }
+                        )
         return Response({"status": "ok"}, status=status.HTTP_200_OK)
 
+def notify_payment_success(user_id: int, order_id: int, amount: int):
+    channel_layer = get_channel_layer()
+    data = {
+        "orderId": order_id,
+        "amount": amount,
+        "message": "Thanh toán thành công",
+    }
+    async_to_sync(channel_layer.group_send)(
+        f"user_{user_id}",
+        {
+            "type": "payment_success",
+            "data": data,
+        }
+    )

@@ -1,1 +1,1 @@
-python manage.py runserver_plus 192.168.0.101:8000 --cert-file 192.168.0.101+2.pem --key-file 192.168.0.101+2-key.pem
+daphne Server.asgi:application --port 8000 --bind 0.0.0.0
