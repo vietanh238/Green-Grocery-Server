@@ -4,7 +4,7 @@ from django.core.asgi import get_asgi_application
 from channels.routing import ProtocolTypeRouter, URLRouter
 from channels.auth import AuthMiddlewareStack
 from django.urls import path
-from accounts.consumers import PaymentConsumer
+from accounts.consumers import MessageConsumer
 
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'Server.settings')
 
@@ -14,7 +14,7 @@ application = ProtocolTypeRouter({
     "http": django_app,
     "websocket": AuthMiddlewareStack(
         URLRouter([
-            path("ws/payments/", PaymentConsumer.as_asgi()),
+            path("ws/message/", MessageConsumer.as_asgi()),
         ])
     ),
 })

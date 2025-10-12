@@ -20,7 +20,8 @@ class CreatePaymentView(APIView):
     def post(self, request):
         payload = request.data
 
-        required_fields = ["orderCode", "amount", "description", "returnUrl", "cancelUrl"]
+        required_fields = ["orderCode", "amount",
+                           "description", "returnUrl", "cancelUrl"]
         missing = [f for f in required_fields if f not in payload]
         if missing:
             return Response(
@@ -101,7 +102,8 @@ class WebhookView(APIView):
             return Response({"status": "ok", "message": "Webhook URL verified successfully"}, status=status.HTTP_200_OK)
 
         try:
-            is_valid = verify_checksum(data_from_payload, CHECKSUM_KEY, checksum_field="signature")
+            is_valid = verify_checksum(
+                data_from_payload, CHECKSUM_KEY, checksum_field="signature")
         except Exception as e:
             print(f"Lỗi khi xác thực checksum: {e}")
             is_valid = False
@@ -128,25 +130,27 @@ class WebhookView(APIView):
 
         payment.save()
         if payment.status == "paid":
-                    user_id = getattr(payment, "user_id", None)
-                    amount = getattr(payment, "amount", None)
+            user_id = getattr(payment, "user_id", None)
+            amount = getattr(payment, "amount", None)
 
-                    if user_id:
-                        notify_payment_success(user_id=user_id, order_id=payment.order_code, amount=amount)
-                    else:
-                        channel_layer = get_channel_layer()
-                        async_to_sync(channel_layer.group_send)(
-                            "broadcast",
-                            {
-                                "type": "payment_success",
-                                "data": {
-                                    "orderId": payment.order_code,
-                                    "amount": amount,
-                                    "message": "Thanh toán thành công (broadcast)"
-                                }
-                            }
-                        )
+            if user_id:
+                notify_payment_success(
+                    user_id=user_id, order_id=payment.order_code, amount=amount)
+            else:
+                channel_layer = get_channel_layer()
+                async_to_sync(channel_layer.group_send)(
+                    "broadcast",
+                    {
+                        "type": "payment_success",
+                        "data": {
+                            "orderId": payment.order_code,
+                            "amount": amount,
+                            "message": "Thanh toán thành công (broadcast)"
+                        }
+                    }
+                )
         return Response({"status": "ok"}, status=status.HTTP_200_OK)
+
 
 def notify_payment_success(user_id: int, order_id: int, amount: int):
     channel_layer = get_channel_layer()
