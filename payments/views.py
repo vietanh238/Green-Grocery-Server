@@ -9,7 +9,7 @@ from channels.layers import get_channel_layer
 from asgiref.sync import async_to_sync
 
 from .models import Payment
-from .services import create_payment_request
+from .services import create_payment_request, delete_payment
 from .utils import verify_checksum
 
 CHECKSUM_KEY = config("PAYOS_CHECKSUM_KEY", "your_checksum_key")
@@ -86,6 +86,33 @@ class CreatePaymentView(APIView):
                     "qrCode": qr_code
                 }
             })
+
+    def delete(self, request, pk):
+        order_code = pk
+        if not order_code:
+            return
+        with transaction.atomic():
+            try:
+                payment_delete = Payment.objects.get(order_code=order_code)
+                payos_res = delete_payment(order_code)
+                if payos_res.code == '00':
+                    payment_delete.status = "delete"
+                payment_delete.save()
+                return Response({
+                    'status': '1',
+                    'response': {
+                        "order_code": order_code
+                    }
+                })
+            except Exception as ex:
+                return Response({
+                    'status': '2',
+                    'response': {
+                        "error_code": "9999",
+                        "error_message_us": "System error",
+                        "error_message_vn": "Lỗi hệ thống"
+                    }
+                })
 
 
 class WebhookView(APIView):

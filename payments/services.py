@@ -35,6 +35,22 @@ def create_payment_request(order_code, amount, description, return_url, cancel_u
         })
 
     resp = requests.post(url, json=body, headers=headers, timeout=15)
-    print(">>> PayOS response:", resp.status_code, resp.text)
     resp.raise_for_status()
     return resp.json()
+
+def delete_payment(order_code):
+    if not order_code or not isinstance(order_code, str):
+        return
+    payos_delete_path = f"/v2/payment-requests/{order_code}/cancel"
+    url = f"{PAYOS_BASE_URL}{payos_delete_path}"
+    headers = {
+        "x-client-id": CLIENT_ID,
+        "x-api-key": API_KEY,
+        "Content-Type": "application/json"
+    }
+    body = {
+        "cancellationReason": "Changed my mind"
+    }
+    res = requests.post(url, json=body, headers=headers, timeout=15)
+    res.raise_for_status()
+    return res.json()
