@@ -9,6 +9,7 @@ class Payment(BaseModel):
     description = models.CharField(max_length=255, blank=True, null=True)
     buyer_name = models.CharField(max_length=128, blank=True, null=True)
     buyer_phone = models.CharField(max_length=32, blank=True, null=True)
+    items = models.JSONField(null=True, blank=True)
 
     class Meta:
         db_table = 'payment'

@@ -17,21 +17,6 @@ class GetNotificationsView(APIView):
                     'time': timezone.now(),
                     'time_now': timezone.now(),
                 })
-                message.append({
-                    'priority': '2',
-                    'title': 'Thay đổi mật khẩu',
-                    'message': 'Vui lòng đổi mật khẩu của bạn',
-                    'time': timezone.now(),
-                    'time_now': timezone.now(),
-                })
-                message.append({
-                    'priority': '3',
-                    'title': 'Thay đổi mật khẩu',
-                    'message': 'Vui lòng đổi mật khẩu của bạn',
-                    'time': timezone.now(),
-                    'time_now': timezone.now(),
-                })
-
 
             return Response({
                 'status': '1',

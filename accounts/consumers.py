@@ -26,3 +26,9 @@ class MessageConsumer(AsyncJsonWebsocketConsumer):
             "type": "payment_success",
             "data": event.get("data", {})
         })
+
+    async def message(self, event):
+        await self.send_json({
+            "type": "message",
+            "data": event.get("data", {})
+        })

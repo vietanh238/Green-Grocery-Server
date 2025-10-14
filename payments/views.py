@@ -7,7 +7,7 @@ import json
 from decouple import config
 from channels.layers import get_channel_layer
 from asgiref.sync import async_to_sync
-
+from product.models import Product
 from .models import Payment
 from .services import create_payment_request, delete_payment
 from .utils import verify_checksum
@@ -74,6 +74,10 @@ class CreatePaymentView(APIView):
 
             payment.transaction_id = transaction_id
             payment.status = "pending"
+
+            # update stock quantity product
+            items = json.dumps(items)
+            payment.items = items
             payment.save()
 
             return Response({
@@ -95,7 +99,7 @@ class CreatePaymentView(APIView):
             try:
                 payment_delete = Payment.objects.get(order_code=order_code)
                 payos_res = delete_payment(order_code)
-                if payos_res.code == '00':
+                if payos_res['code'] == '00':
                     payment_delete.status = "delete"
                 payment_delete.save()
                 return Response({
@@ -125,6 +129,8 @@ class WebhookView(APIView):
         signature = payload['signature']
         data_from_payload = payload.get("data")
         data_from_payload['signature'] = signature
+        list_product_reorder = []
+
         if not data_from_payload or not isinstance(data_from_payload, dict):
             return Response({"status": "ok", "message": "Webhook URL verified successfully"}, status=status.HTTP_200_OK)
 
@@ -149,6 +155,14 @@ class WebhookView(APIView):
         payment_status_code = payload.get("code")
         if payment_status_code == "00":
             payment.status = "paid"
+            items = json.loads(payment.items)
+            for item in items:
+                product = Product.objects.filter(bar_code=item.get('bar_code')).first()
+                if product:
+                    product.stock_quantity = product.stock_quantity - item.get('quantity')
+                    if product.stock_quantity <= product.reorder_point:
+                        list_product_reorder.append(product.bar_code)
+            product.save()
         else:
             payment.status = "failed"
 
@@ -163,6 +177,18 @@ class WebhookView(APIView):
             if user_id:
                 notify_payment_success(
                     user_id=user_id, order_id=payment.order_code, amount=amount)
+                if list_product_reorder:
+                    channel_layer = get_channel_layer()
+                    async_to_sync(channel_layer.group_send)(
+                        "broadcast",
+                        {
+                            "type": "remind_reorder",
+                            "data": {
+                                "items": list_product_reorder,
+                                "message": "Sản phẩm gần sắp hết"
+                            }
+                        }
+                    )
             else:
                 channel_layer = get_channel_layer()
                 async_to_sync(channel_layer.group_send)(
@@ -176,6 +202,19 @@ class WebhookView(APIView):
                         }
                     }
                 )
+                if list_product_reorder:
+                    channel_layer = get_channel_layer()
+                    async_to_sync(channel_layer.group_send)(
+                        "broadcast",
+                        {
+                            "type": "message",
+                            "data": {
+                                'message_type': 'remind_reorder',
+                                "items": list_product_reorder,
+                                "message": "Sản phẩm gần sắp hết"
+                            }
+                        }
+                    )
         return Response({"status": "ok"}, status=status.HTTP_200_OK)
 
 
