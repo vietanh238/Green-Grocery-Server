@@ -10,7 +10,7 @@ class GetProduct(APIView):
 
     def get(self, request):
         try:
-            list_product = Product.objects.annotate(
+            list_product = Product.objects.filter(is_active=True).annotate(
                 is_reorder = Case(
                     When(stock_quantity__lte=F("reorder_point"),then=Value(True)),
                     default=Value(False),
@@ -19,7 +19,7 @@ class GetProduct(APIView):
                 name_category=F("category_id__name")
             ).values(
                 "name", "sku", "bar_code", "name_category", "unit",
-                "price", "is_reorder", "stock_quantity"
+                "price", "is_reorder", "stock_quantity", "cost_price"
             )
             list_product = list_product.order_by('stock_quantity')[:100]
 
