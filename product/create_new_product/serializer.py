@@ -34,6 +34,7 @@ class ProductSerializer(serializers.ModelSerializer):
             'category_id',
             'unit',
             'price',
+            'stock_quantity',
             'costPrice',
             'created_at',
             'updated_at'
