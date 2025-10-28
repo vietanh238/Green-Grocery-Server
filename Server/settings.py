@@ -39,6 +39,7 @@ INSTALLED_APPS = [
     'product',
     'sell',
     'debit',
+    'report',
     'payments',
     'channels'
 ]
