@@ -1,103 +1,147 @@
-from rest_framework.response import Response
 from rest_framework.views import APIView
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
 from rest_framework import status
-from django.db.models import Sum, F, ExpressionWrapper, DecimalField
-from django.utils.timezone import now
+from rest_framework.permissions import IsAuthenticated
+from django.db import transaction
+from django.db.models import Sum, Q, F
+import json
+import uuid
+from product.models import Product
 from ..models import Customer, Debit
-from decimal import Decimal
-from .serializer import CreateDebitSerializer
+from channels.layers import get_channel_layer
+from asgiref.sync import async_to_sync
 
 
-class CreateDebit(APIView):
+class CreateDebitView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
         try:
-            serializer = CreateDebitSerializer(data=request.data)
+            customer_name = request.data.get('customer_name')
+            customer_phone = request.data.get('customer_phone')
+            customer_address = request.data.get('customer_address', '')
+            customer_code = request.data.get('customer_code')
 
-            if serializer.is_valid():
-                customer_code = serializer.validated_data['customer_code']
-                new_debit_amount = serializer.validated_data['debit_amount']
-                due_date = serializer.validated_data['due_date']
-                note = serializer.validated_data.get('note', '')
+            debit_amount = request.data.get('debit_amount')
+            paid_amount = request.data.get('paid_amount', 0)
+            total_amount = request.data.get('total_amount')
+            due_date = request.data.get('due_date')
+            note = request.data.get('note', '')
+            items = request.data.get('items', [])
 
-                try:
-                    customer = Customer.objects.get(
-                        customer_code=customer_code,
-                        is_active=True
-                    )
-                except Customer.DoesNotExist:
-                    return Response({
-                        "status": "9999",
-                        "error_message": "Khách hàng không tồn tại"
-                    }, status=status.HTTP_404_NOT_FOUND)
-
-                existing_debit = Debit.objects.filter(
-                    customer=customer,
-                    is_active=True
-                ).first()
-
-                if existing_debit:
-                    existing_debit.debit_amount += new_debit_amount
-                    existing_debit.total_amount = existing_debit.debit_amount
-                    existing_debit.due_date = due_date
-
-                    if note:
-                        existing_debit.note = note if not existing_debit.note else f"{existing_debit.note}\n{note}"
-
-                    existing_debit.save()
-
-                    response_data = {
-                        "id": existing_debit.id,
-                        "customer_code": customer.customer_code,
-                        "customer_name": customer.name,
-                        "debit_amount": float(existing_debit.debit_amount),
-                        "paid_amount": float(existing_debit.paid_amount),
-                        "total_amount": float(existing_debit.total_amount),
-                        "due_date": existing_debit.due_date,
-                        "note": existing_debit.note,
-                        "created_at": existing_debit.created_at,
-                        "updated_at": existing_debit.updated_at,
-                        "message": "Cập nhật nợ thành công"
-                    }
-                else:
-                    new_debit = Debit.objects.create(
-                        customer=customer,
-                        debit_amount=new_debit_amount,
-                        paid_amount=Decimal('0.00000'),
-                        total_amount=new_debit_amount,
-                        due_date=due_date,
-                        note=note
-                    )
-
-                    response_data = {
-                        "id": new_debit.id,
-                        "customer_code": customer.customer_code,
-                        "customer_name": customer.name,
-                        "debit_amount": float(new_debit.debit_amount),
-                        "paid_amount": float(new_debit.paid_amount),
-                        "total_amount": float(new_debit.total_amount),
-                        "due_date": new_debit.due_date,
-                        "note": new_debit.note,
-                        "created_at": new_debit.created_at,
-                        "updated_at": new_debit.updated_at,
-                        "message": "Ghi nợ thành công"
-                    }
-
+            if not debit_amount:
                 return Response({
-                    "status": "1",
-                    "response": response_data
-                }, status=status.HTTP_201_CREATED)
-            else:
-                return Response({
-                    "status": "9999",
-                    "error_message": "Dữ liệu không hợp lệ",
-                    "errors": serializer.errors
+                    'status': '2',
+                    'error_message': 'Thiếu số tiền ghi nợ'
                 }, status=status.HTTP_400_BAD_REQUEST)
+
+            with transaction.atomic():
+                if customer_code:
+                    try:
+                        customer = Customer.objects.get(
+                            customer_code=customer_code, is_active=True)
+                    except Customer.DoesNotExist:
+                        return Response({
+                            'status': '2',
+                            'error_message': 'Không tìm thấy khách hàng'
+                        }, status=status.HTTP_404_NOT_FOUND)
+                elif customer_phone:
+                    customer = Customer.objects.filter(
+                        phone=customer_phone,
+                        is_active=True
+                    ).first()
+
+                    if not customer:
+                        if not customer_name:
+                            return Response({
+                                'status': '2',
+                                'error_message': 'Thiếu tên khách hàng'
+                            }, status=status.HTTP_400_BAD_REQUEST)
+
+                        customer = Customer.objects.create(
+                            customer_code=str(uuid.uuid4()),
+                            name=customer_name,
+                            phone=customer_phone,
+                            address=customer_address
+                        )
+                else:
+                    return Response({
+                        'status': '2',
+                        'error_message': 'Thiếu thông tin khách hàng (customer_code hoặc customer_phone)'
+                    }, status=status.HTTP_400_BAD_REQUEST)
+
+                debit = Debit.objects.create(
+                    customer=customer,
+                    debit_amount=debit_amount,
+                    paid_amount=paid_amount,
+                    total_amount=total_amount,
+                    due_date=due_date,
+                    note=note
+                )
+
+                list_product_reorder = []
+
+                for item in items:
+                    bar_code = item.get('bar_code') or item.get('sku')
+                    quantity = item.get('quantity', 0)
+
+                    if bar_code:
+                        try:
+                            product = Product.objects.get(bar_code=bar_code)
+                            product.stock_quantity = max(
+                                0, product.stock_quantity - quantity)
+
+                            if product.stock_quantity <= product.reorder_point:
+                                list_product_reorder.append(product.bar_code)
+
+                            product.save()
+                        except Product.DoesNotExist:
+                            pass
+
+                channel_layer = get_channel_layer()
+                async_to_sync(channel_layer.group_send)(
+                    "broadcast",
+                    {
+                        "type": "debit_created",
+                        "data": {
+                            "customerName": customer.name,
+                            "debitAmount": float(debit_amount),
+                            "message": f"Đã ghi nợ {debit_amount}đ cho {customer.name}"
+                        }
+                    }
+                )
+
+                if list_product_reorder:
+                    async_to_sync(channel_layer.group_send)(
+                        "broadcast",
+                        {
+                            "type": "message",
+                            "data": {
+                                'message_type': 'remind_reorder',
+                                "items": list_product_reorder,
+                                "message": "Sản phẩm gần sắp hết"
+                            }
+                        }
+                    )
+
+                return Response({
+                    'status': '1',
+                    'response': {
+                        'debit_id': debit.id,
+                        'customer_code': customer.customer_code,
+                        'customer_name': customer.name,
+                        'customer_phone': customer.phone,
+                        'debit_amount': float(debit.debit_amount),
+                        'paid_amount': float(debit.paid_amount),
+                        'total_amount': float(debit.total_amount),
+                        'due_date': debit.due_date,
+                        'note': debit.note,
+                        'created_at': debit.created_at.isoformat()
+                    }
+                }, status=status.HTTP_201_CREATED)
 
         except Exception as e:
             return Response({
-                "status": "9999",
-                "error_message": f"System error: {str(e)}"
+                'status': '9999',
+                'error_message': f'Lỗi hệ thống: {str(e)}'
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
