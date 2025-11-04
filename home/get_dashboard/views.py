@@ -9,7 +9,6 @@ import json
 from payments.models import Payment
 from product.models import Product
 
-
 class GetDashboardView(APIView):
     permission_classes = [IsAuthenticated]
 

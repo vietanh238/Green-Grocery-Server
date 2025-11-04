@@ -24,7 +24,7 @@ class CreateDebitView(APIView):
 
             debit_amount = request.data.get('debit_amount')
             paid_amount = request.data.get('paid_amount', 0)
-            total_amount = request.data.get('total_amount')
+            total_amount = request.data.get('debit_amount')
             due_date = request.data.get('due_date')
             note = request.data.get('note', '')
             items = request.data.get('items', [])
