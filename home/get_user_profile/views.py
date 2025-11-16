@@ -5,9 +5,8 @@ from rest_framework import status
 from django.db.models import Q
 from django.contrib.auth.models import User
 import json
-from product.models import Product
-from payments.models import Payment
-from debit.models import Customer
+from core.models import Product, Payment
+from core.models import Customer
 
 class GetUserProfile(APIView):
     permission_classes = [IsAuthenticated]

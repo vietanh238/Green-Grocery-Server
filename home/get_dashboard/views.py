@@ -6,8 +6,9 @@ from django.db.models import Sum, Count, F, Q
 from django.utils.timezone import now
 from datetime import timedelta, datetime
 import json
-from payments.models import Payment
-from product.models import Product
+from core.models import Payment
+from core.models import Product, Category
+
 
 class GetDashboardView(APIView):
     permission_classes = [IsAuthenticated]

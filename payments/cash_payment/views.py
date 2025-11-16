@@ -6,8 +6,8 @@ from django.db import transaction
 import json
 from channels.layers import get_channel_layer
 from asgiref.sync import async_to_sync
-from product.models import Product
-from ..models import Payment
+from core.models import Product, Category
+from core.models import Payment
 import time
 
 

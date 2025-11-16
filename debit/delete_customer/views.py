@@ -2,7 +2,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated
 from rest_framework import status
-from ..models import Customer, Debit
+from core.models import Customer, Debt
 from django.db.models import Sum, F, ExpressionWrapper, DecimalField
 from .serializer import DeleteCustomerSerializer
 

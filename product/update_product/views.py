@@ -1,7 +1,7 @@
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from ..models import Product, Category
+from core.models import Product, Category
 from .serializer import UpdateProductSerializer
 from django.db import transaction
 

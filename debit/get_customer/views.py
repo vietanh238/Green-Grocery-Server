@@ -1,8 +1,7 @@
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from ..models import Customer
-from ..models import Debit
+from core.models import Customer, Debt
 from django.db.models import Sum, Max, F, ExpressionWrapper, DecimalField, When, Case, Value, CharField, Q, BooleanField
 from django.utils.timezone import now
 

@@ -6,8 +6,8 @@ from django.db.models import Sum, Count, F, ExpressionWrapper, DecimalField, Q
 from django.utils.timezone import now
 from datetime import timedelta
 import json
-from product.models import Product
-from payments.models import Payment
+from core.models import Product, Category
+from core.models import Payment
 from datetime import timedelta, datetime
 
 class GetBusinessReport(APIView):

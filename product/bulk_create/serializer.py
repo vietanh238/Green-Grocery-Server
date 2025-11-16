@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from ..models import Product, Category
+from core.models import Product, Category
 
 
 class BulkProductSerializer(serializers.Serializer):

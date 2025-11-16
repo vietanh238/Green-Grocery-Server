@@ -7,8 +7,8 @@ import json
 from decouple import config
 from channels.layers import get_channel_layer
 from asgiref.sync import async_to_sync
-from product.models import Product
-from .models import Payment
+from core.models import Product, Category
+from core.models import Payment
 from .services import create_payment_request, delete_payment
 from .utils import verify_checksum
 

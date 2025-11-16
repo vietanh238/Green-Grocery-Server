@@ -6,8 +6,8 @@ from django.db import transaction
 from django.db.models import Sum, Q, F
 import json
 import uuid
-from product.models import Product
-from ..models import Customer, Debit
+from core.models import Product, Category
+from core.models import Customer, Debt
 from channels.layers import get_channel_layer
 from asgiref.sync import async_to_sync
 

@@ -3,7 +3,7 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from rest_framework import status
 from .serializer import BulkCreateProductsSerializer
-from ..models import Product, Category
+from core.models import Product, Category
 from django.db import transaction
 from django.db.models import Q
 

@@ -1,6 +1,6 @@
 from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated
-from ..models import Category
+from core.models import Product, Category
 from rest_framework.response import Response
 
 class GetCategory(APIView):

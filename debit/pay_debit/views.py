@@ -3,7 +3,7 @@ from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated
 from rest_framework import status
 from django.utils.timezone import now
-from ..models import Customer, Debit
+from core.models import Customer, Debt
 from decimal import Decimal
 from .serializer import PayDebitSerializer
 

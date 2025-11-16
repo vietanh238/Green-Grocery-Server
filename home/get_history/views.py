@@ -5,6 +5,7 @@ from rest_framework import status
 from django.db.models import Q, Sum, Count
 from datetime import datetime, timedelta
 from decimal import Decimal
+from core.models import Order, Payment
 
 
 class TransactionHistoryView(APIView):
@@ -107,7 +108,6 @@ class TransactionHistoryView(APIView):
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     def _get_sales_transactions(self, user, date_from, date_to):
-        from orders.models import Order
 
         return Order.objects.filter(
             user=user,
@@ -119,9 +119,8 @@ class TransactionHistoryView(APIView):
         return []
 
     def _get_payment_transactions(self, user, date_from, date_to):
-        from debit.models import DebitPayment
 
-        return DebitPayment.objects.filter(
+        return Payment.objects.filter(
             user=user,
             created_at__date__gte=date_from,
             created_at__date__lte=date_to

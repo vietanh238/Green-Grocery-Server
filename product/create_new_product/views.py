@@ -4,7 +4,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework import status
 from .serializer import ProductSerializer
 from django.db import transaction
-from ..models import Category
+from core.models import Product, Category
 
 
 class CreateProduct(APIView):
