@@ -13,7 +13,21 @@ class BulkCreateProducts(APIView):
 
     def post(self, request):
         try:
-            serializer = BulkCreateProductsSerializer(data=request.data)
+            data = request.data
+            products = request.data.get('products', [])
+            for idx,product in enumerate(products):
+                item_category = Category.objects.filter(name=product['name'])
+                if item_category.exists():
+                    category = item_category.first().id
+                else:
+                    Category.objects.create(
+                        name=product['name']
+                    )
+                    category = Category.objects.filter(
+                        name=product['name']
+                    ).first().id
+                data['products'][idx]['category'] = category
+            serializer = BulkCreateProductsSerializer(data=data)
 
             if not serializer.is_valid():
                 return Response({
@@ -77,7 +91,7 @@ class BulkCreateProducts(APIView):
                         )
                         category_cache[category_name] = category
 
-                    product_data['category_id'] = category_cache[category_name]
+                    product_data['category'] = category_cache[category_name]
 
                     products_to_create.append(Product(**product_data))
 

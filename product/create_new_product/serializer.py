@@ -31,16 +31,17 @@ class ProductSerializer(serializers.ModelSerializer):
             'name',
             'sku',
             'barCode',
-            'category_id',
+            'category',
             'unit',
             'price',
             'stock_quantity',
             'costPrice',
             'created_at',
-            'updated_at'
+            'updated_at',
+            'created_by'
         ]
 
-        read_only_fields = ["id", "created_at", "updated_at"]
+        read_only_fields = ["id", "created_at", "updated_at", "created_by"]
 
         extra_kwargs = {
             'sku': {

@@ -12,19 +12,20 @@ class CreateProduct(APIView):
 
     def post(self, request):
         try:
-            category_id = request.data.get('category')
-            item_category = Category.objects.filter(name=category_id)
+            user = request.user
+            category = request.data.get('category')
+            item_category = Category.objects.filter(name=category)
             if item_category.exists():
-                category_id = item_category.first().id
+                category = item_category.first().id
             else:
                 Category.objects.create(
                     name=request.data.get('category')
                 )
-                category_id = Category.objects.filter(
+                category = Category.objects.filter(
                     name=request.data.get('category')
                 ).first().id
             data = request.data
-            data['category_id'] = category_id
+            data['category'] = category
             serializer = ProductSerializer(data=data)
             if not serializer.is_valid():
                 return Response({
@@ -34,7 +35,7 @@ class CreateProduct(APIView):
 
 
             with transaction.atomic():
-                product = serializer.save()
+                product = serializer.save(created_by=user, updated_by=user)
 
             return Response({
                 'status': '1',

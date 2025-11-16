@@ -19,8 +19,7 @@ class DeleteProductView(APIView):
             product = Product.objects.filter(bar_code=bar_code).first()
             with transaction.atomic():
                 if product:
-                    product.is_active = False;
-                    product.save()
+                    product.delete()
                     return Response({
                         'status': '1',
                         'response': 'Delete successfully'
