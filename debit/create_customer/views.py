@@ -16,35 +16,33 @@ class CreateCustomer(APIView):
 
     def post(self, request):
         try:
-            serializer = CustomerSerializer(data=request.data)
-
-            if serializer.is_valid():
-                customer_code = str(uuid.uuid4())
-
-                customer = Customer.objects.create(
-                    customer_code=customer_code,
-                    name=serializer.validated_data['name'],
-                    phone=serializer.validated_data['phone'],
-                    address=serializer.validated_data.get('address', '')
-                )
-
+            serializer = CustomerSerializer()
+            error_code = serializer.validate(data=request.data)
+            if error_code != 0:
                 return Response({
-                    "status": "1",
-                    "response": {
-                        "id": customer.id,
-                        "customer_code": customer.customer_code,
-                        "name": customer.name,
-                        "phone": customer.phone,
-                        "address": customer.address,
-                        "created_at": customer.created_at
-                    }
-                }, status=status.HTTP_201_CREATED)
-            else:
-                return Response({
-                    "status": "9999",
-                    "error_message": "Dữ liệu không hợp lệ",
-                    "errors": serializer.errors
-                }, status=status.HTTP_400_BAD_REQUEST)
+                    'status': '2',
+                    'error_code': error_code
+                })
+
+            customer_code = str(uuid.uuid4())
+            customer = Customer.objects.create(
+                customer_code=customer_code,
+                name=request.data.get('name'),
+                phone=request.data.get('phone'),
+                address=request.data.get('address', '')
+            )
+
+            return Response({
+                "status": "1",
+                "response": {
+                    "id": customer.id,
+                    "customer_code": customer.customer_code,
+                    "name": customer.name,
+                    "phone": customer.phone,
+                    "address": customer.address,
+                    "created_at": customer.created_at
+                }
+            }, status=status.HTTP_201_CREATED)
 
         except Exception as e:
             return Response({

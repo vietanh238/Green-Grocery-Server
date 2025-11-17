@@ -1,24 +1,16 @@
 from rest_framework import serializers
 from core.models import Customer
 
+
 class CustomerSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Customer
-        fields = ['name', 'phone', 'address']
-        extra_kwargs = {
-            'name': {
-                'required': True,
-                'error_messages': {
-                    'blank': 'Tên khách hàng không được trống',
-                    'required': 'Tên khách hàng là bắt buộc'
-                }
-            },
-            'phone': {
-                'required': True,
-                'error_messages': {
-                    'blank': 'Số điện thoại không được trống',
-                    'required': 'Số điện thoại là bắt buộc'
-                }
-            },
-            'address': {'required': False, 'allow_blank': True}
-        }
+    def validate(self, data):
+        error_code = 0
+        if not data.get('phone'):
+            error_code = 1
+        is_has_account = Customer.objects.filter(
+            phone=data.get('phone')
+        ).first()
+        if is_has_account:
+            error_code = 2
+
+        return error_code

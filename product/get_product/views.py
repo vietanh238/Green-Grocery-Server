@@ -24,7 +24,7 @@ class GetProduct(APIView):
             ).values(
                 "name", "sku", "bar_code", "name_category", "unit",
                 "price", "is_reorder", "stock_quantity", "cost_price",
-                "created_by_name", "updated_by_name", "created_at_date"
+                "created_by_name", "updated_by_name", "created_at_date", "reorder_point"
             )
             list_product = list_product.order_by('stock_quantity')[:100]
 

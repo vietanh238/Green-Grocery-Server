@@ -27,29 +27,12 @@ class DeleteCustomer(APIView):
                         "status": "9999",
                         "error_message": "Khách hàng không tồn tại"
                     }, status=status.HTTP_404_NOT_FOUND)
-
-                debit = Debit.objects.filter(
-                    customer=customer,
-                    is_active=True
-                ).annotate(
-                    remaining_amount=ExpressionWrapper(
-                        F("debit_amount") - F("paid_amount"),
-                        output_field=DecimalField(
-                            max_digits=19, decimal_places=5)
-                    )
-                ).first()
-
-                if debit and debit.remaining_amount > 0:
+                if customer.total_debt != 0:
                     return Response({
-                        "status": "9999",
-                        "error_message": f"Không thể xóa khách hàng vì còn nợ {float(debit.remaining_amount)}"
-                    }, status=status.HTTP_400_BAD_REQUEST)
-
-                customer.is_active = False
-                customer.save()
-
-                Debit.objects.filter(customer=customer).update(is_active=False)
-
+                        'status': '2',
+                        'error_code': 1
+                    })
+                customer.delete()
                 return Response({
                     "status": "1",
                     "response": {

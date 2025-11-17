@@ -3,9 +3,11 @@ from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated
 from rest_framework import status
 from django.utils.timezone import now
-from core.models import Customer, Debt
+from core.models import Customer, Debt, DebtPayment
 from decimal import Decimal
+import uuid
 from .serializer import PayDebitSerializer
+from django.db.models import F, Sum
 
 
 class PayDebit(APIView):
@@ -17,7 +19,8 @@ class PayDebit(APIView):
 
             if serializer.is_valid():
                 customer_code = serializer.validated_data['customer_code']
-                payment_amount = serializer.validated_data['paid_amount']
+                payment_amount = Decimal(
+                    str(serializer.validated_data['paid_amount']))
                 note = serializer.validated_data.get('note', '')
 
                 try:
@@ -31,59 +34,101 @@ class PayDebit(APIView):
                         "error_message": "Khách hàng không tồn tại"
                     }, status=status.HTTP_404_NOT_FOUND)
 
-                debit = Debit.objects.filter(
+                debts = Debt.objects.filter(
                     customer=customer,
+                    debt_amount__gt=F("paid_amount"),
                     is_active=True
-                ).first()
+                ).order_by('due_date')
 
-                if not debit:
+                if not debts.exists():
                     return Response({
                         "status": "9999",
                         "error_message": "Khách hàng không có nợ"
                     }, status=status.HTTP_404_NOT_FOUND)
 
-                remaining_before = debit.debit_amount - debit.paid_amount
+                total_remaining_before = debts.aggregate(
+                    total=Sum("debt_amount") - Sum("paid_amount")
+                )["total"] or 0
 
-                if payment_amount > remaining_before:
+                if payment_amount > total_remaining_before:
                     return Response({
                         "status": "9999",
-                        "error_message": f"Số tiền trả vượt quá số nợ. Nợ còn lại: {float(remaining_before)}"
+                        "error_message": f"Số tiền trả vượt quá số nợ. Nợ còn lại: {float(total_remaining_before)}"
                     }, status=status.HTTP_400_BAD_REQUEST)
 
-                debit.paid_amount += payment_amount
+                remaining_payment = payment_amount
+                processed_debts = []
 
-                remaining_after = debit.debit_amount - debit.paid_amount
+                for debt in debts:
+                    if remaining_payment <= 0:
+                        break
 
-                if note:
-                    debit.note = note if not debit.note else f"{debit.note}\n{note}"
+                    remaining_debt = debt.debt_amount - debt.paid_amount
+                    payment_for_this_debt = min(
+                        remaining_payment, remaining_debt)
 
-                debit.save()
-                if remaining_after == 0:
+                    debt.paid_amount += payment_for_this_debt
+
+                    if debt.paid_amount >= debt.debt_amount:
+                        debt.status = 'paid'
+                        debt.paid_at = now()
+                    elif debt.paid_amount > 0:
+                        debt.status = 'partial'
+                    else:
+                        debt.status = 'active'
+
+                    if debt.due_date < now().date() and debt.status != 'paid':
+                        debt.status = 'overdue'
+
+                    debt.save()
+
+                    DebtPayment.objects.create(
+                        payment_code=f"PAY_{uuid.uuid4().hex[:16].upper()}",
+                        debt=debt,
+                        amount=payment_for_this_debt,
+                        note=note,
+                        created_by=request.user
+                    )
+
+                    processed_debts.append({
+                        'debt_code': debt.debt_code,
+                        'payment_amount': float(payment_for_this_debt),
+                        'remaining_after': float(debt.debt_amount - debt.paid_amount)
+                    })
+
+                    remaining_payment -= payment_for_this_debt
+
+                total_remaining_after = debts.aggregate(
+                    total=Sum("debt_amount") - Sum("paid_amount")
+                )["total"] or 0
+
+                if total_remaining_after == 0:
                     debt_status = "paid_debt"
                     status_message = "Đã trả hết nợ"
                 else:
-                    today = now().date()
-                    if debit.due_date and debit.due_date < today:
-                        debt_status = "overdue"
-                        status_message = "Nợ quá hạn"
-                    else:
-                        debt_status = "in_debt"
-                        status_message = "Còn nợ"
+                    has_overdue = Debt.objects.filter(
+                        customer=customer,
+                        due_date__lt=now().date(),
+                        debt_amount__gt=F("paid_amount"),
+                        is_active=True
+                    ).exists()
+                    debt_status = "overdue" if has_overdue else "in_debt"
+                    status_message = "Nợ quá hạn" if has_overdue else "Còn nợ"
+
+                customer.total_debt = total_remaining_after
+                customer.save()
 
                 response_data = {
-                    "id": debit.id,
                     "customer_code": customer.customer_code,
                     "customer_name": customer.name,
-                    "debit_amount": float(debit.debit_amount),
-                    "paid_amount": float(debit.paid_amount),
-                    "remaining_amount": float(remaining_after),
                     "payment_amount": float(payment_amount),
-                    "total_amount": float(debit.total_amount),
-                    "due_date": debit.due_date,
+                    "remaining_before": float(total_remaining_before),
+                    "remaining_after": float(total_remaining_after),
                     "debt_status": debt_status,
                     "status_message": status_message,
-                    "note": debit.note,
-                    "updated_at": debit.updated_at
+                    "note": note,
+                    "processed_debts": processed_debts,
+                    "updated_at": now().isoformat()
                 }
 
                 return Response({
