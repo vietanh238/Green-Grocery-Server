@@ -1,65 +1,120 @@
-from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from core.models import Product, Category
-from .serializer import UpdateProductSerializer
+from rest_framework.permissions import IsAuthenticated
+from rest_framework import status
 from django.db import transaction
+from core.models import Product, Category, Supplier
+from .serializer import ProductUpdateSerializer
+from product.get_product.serializers import ProductListSerializer
 
 
 class UpdateProductView(APIView):
     permission_classes = [IsAuthenticated]
 
     def put(self, request):
-        bar_code = request.data.get('barCode')
-        serializer = UpdateProductSerializer
-        if not bar_code:
-            return Response({
-                'status': '2',
-                'error_message': 'Bar code is not exist'
-            })
-        item_category = Category.objects.filter(name=request.data.get('category'))
-        if item_category.exists():
-            category = item_category.first()
-        else:
-            Category.objects.create(
-                name=request.data.get('category')
-            )
-            category = Category.objects.filter(
-                name=request.data.get('category')
-            ).first()
-        product = Product.objects.filter(bar_code=bar_code).first()
-        if not product:
-            return Response({
-                'status': '2',
-                'error_message': 'Product does not exist'
-            })
+        try:
+            user = request.user
+            serializer = ProductUpdateSerializer(data=request.data)
 
-        validate_require = serializer.validateData(request.data)
-        if validate_require == 1:
-            return Response({
-                'status': '2',
-                'error_message': 'Please fill in the required fields'
-            })
-
-        with transaction.atomic():
-            try:
-                product.name = request.data.get('productName')
-                product.sku = request.data.get('sku')
-                product.price = request.data.get('price')
-                product.cost_price = request.data.get('costPrice')
-                product.unit = request.data.get('unit')
-                product.category_id = category
-                product.stock_quantity = request.data.get('quantity')
-                product.save()
-
-                return Response({
-                    'status': '1',
-                    'response': {
-                        'product': product.bar_code
-                    }
-                })
-            except Exception as ex:
+            if not serializer.is_valid():
                 return Response({
                     'status': '2',
-                    'error_message': 'System error'
-                })
+                    'response': {
+                        'error_code': '001',
+                        'error_message_us': 'Validation error',
+                        'error_message_vn': 'Dữ liệu không hợp lệ',
+                        'errors': serializer.errors
+                    }
+                }, status=status.HTTP_400_BAD_REQUEST)
+
+            data = serializer.validated_data
+
+            try:
+                product = Product.objects.get(id=data['id'], is_active=True)
+            except Product.DoesNotExist:
+                return Response({
+                    'status': '2',
+                    'response': {
+                        'error_code': '005',
+                        'error_message_us': 'Product not found',
+                        'error_message_vn': 'Không tìm thấy sản phẩm'
+                    }
+                }, status=status.HTTP_404_NOT_FOUND)
+
+            if Product.objects.filter(sku=data['sku']).exclude(id=product.id).exists():
+                return Response({
+                    'status': '2',
+                    'response': {
+                        'error_code': '002',
+                        'error_message_us': 'SKU already exists',
+                        'error_message_vn': f"SKU '{data['sku']}' đã tồn tại trong hệ thống"
+                    }
+                }, status=status.HTTP_400_BAD_REQUEST)
+
+            if Product.objects.filter(bar_code=data['barCode']).exclude(id=product.id).exists():
+                return Response({
+                    'status': '2',
+                    'response': {
+                        'error_code': '003',
+                        'error_message_us': 'Barcode already exists',
+                        'error_message_vn': f"Barcode '{data['barCode']}' đã tồn tại trong hệ thống"
+                    }
+                }, status=status.HTTP_400_BAD_REQUEST)
+
+            with transaction.atomic():
+                category_name = data['category']
+                category, created = Category.objects.get_or_create(
+                    name=category_name,
+                    defaults={
+                        'created_by': user,
+                        'updated_by': user
+                    }
+                )
+
+                supplier = None
+                if data.get('supplierId'):
+                    try:
+                        supplier = Supplier.objects.get(
+                            id=data['supplierId'],
+                            is_active=True
+                        )
+                    except Supplier.DoesNotExist:
+                        pass
+
+                product.name = data['productName']
+                product.sku = data['sku']
+                product.bar_code = data['barCode']
+                product.category = category
+                product.supplier = supplier
+                product.unit = data['unit']
+                product.cost_price = data['costPrice']
+                product.price = data['price']
+                product.stock_quantity = data['quantity']
+                product.reorder_point = data['reorderPoint']
+                product.max_stock_level = data['maxStockLevel']
+                product.image = data.get('image', '')
+                product.description = data.get('description', '')
+                product.has_expiry = data.get('hasExpiry', False)
+                product.shelf_life_days = data.get('shelfLifeDays')
+                product.updated_by = user
+                product.save()
+
+            product_data = ProductListSerializer(product).data
+
+            return Response({
+                'status': '1',
+                'response': {
+                    'message': 'Cập nhật sản phẩm thành công',
+                    'product': product_data
+                }
+            }, status=status.HTTP_200_OK)
+
+        except Exception as ex:
+            return Response({
+                'status': '2',
+                'response': {
+                    'error_code': '9999',
+                    'error_message_us': 'An internal server error occurred.',
+                    'error_message_vn': f'Lỗi hệ thống: {str(ex)}'
+                }
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

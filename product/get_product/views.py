@@ -1,40 +1,34 @@
+# product/get_product/views.py
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
+from rest_framework import status
 from core.models import Product
-from django.db.models import Case, When, Value, BooleanField
-from django.db.models import F
-from django.db.models.functions import TruncDate
+from .serializers import ProductListSerializer
 
-class GetProduct(APIView):
+
+class GetProductView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
         try:
-            list_product = Product.objects.filter(is_active=True).annotate(
-                is_reorder = Case(
-                    When(stock_quantity__lte=F("reorder_point"),then=Value(True)),
-                    default=Value(False),
-                    output_field=BooleanField()
-                ),
-                name_category=F("category__name"),
-                created_by_name= F("created_by__last_name"),
-                updated_by_name= F("updated_by__last_name"),
-                created_at_date=TruncDate('created_at')
-            ).values(
-                "name", "sku", "bar_code", "name_category", "unit",
-                "price", "is_reorder", "stock_quantity", "cost_price",
-                "created_by_name", "updated_by_name", "created_at_date", "reorder_point"
-            )
-            list_product = list_product.order_by('stock_quantity')[:100]
+            products = Product.objects.select_related(
+                'category', 'supplier'
+            ).filter(is_active=True)
+
+            serializer = ProductListSerializer(products, many=True)
 
             return Response({
-                "status": "1",
-                "response":list_product
-            })
+                'status': '1',
+                'response': serializer.data
+            }, status=status.HTTP_200_OK)
 
         except Exception as ex:
             return Response({
-                "error_code": "9999",
-                "error_message": "System error",
-            })
+                'status': '2',
+                'response': {
+                    'error_code': '9999',
+                    'error_message_us': 'An internal server error occurred.',
+                    'error_message_vn': f'Lỗi hệ thống: {str(ex)}'
+                }
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
