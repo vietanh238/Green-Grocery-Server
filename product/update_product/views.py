@@ -3,6 +3,7 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from rest_framework import status
 from django.db import transaction
+from django.utils import timezone
 from core.models import Product, Category, Supplier
 from .serializer import ProductUpdateSerializer
 from product.get_product.serializers import ProductListSerializer
@@ -41,7 +42,7 @@ class UpdateProductView(APIView):
                     }
                 }, status=status.HTTP_404_NOT_FOUND)
 
-            if Product.objects.filter(sku=data['sku']).exclude(id=product.id).exists():
+            if Product.objects.filter(sku=data['sku'], is_active=True).exclude(id=product.id).exists():
                 return Response({
                     'status': '2',
                     'response': {
@@ -51,7 +52,7 @@ class UpdateProductView(APIView):
                     }
                 }, status=status.HTTP_400_BAD_REQUEST)
 
-            if Product.objects.filter(bar_code=data['barCode']).exclude(id=product.id).exists():
+            if Product.objects.filter(bar_code=data['barCode'], is_active=True).exclude(id=product.id).exists():
                 return Response({
                     'status': '2',
                     'response': {
@@ -62,6 +63,8 @@ class UpdateProductView(APIView):
                 }, status=status.HTTP_400_BAD_REQUEST)
 
             with transaction.atomic():
+                old_quantity = product.stock_quantity
+
                 category_name = data['category']
                 category, created = Category.objects.get_or_create(
                     name=category_name,
@@ -97,6 +100,10 @@ class UpdateProductView(APIView):
                 product.has_expiry = data.get('hasExpiry', False)
                 product.shelf_life_days = data.get('shelfLifeDays')
                 product.updated_by = user
+
+                if data['quantity'] > old_quantity:
+                    product.last_restock_date = timezone.now()
+
                 product.save()
 
             product_data = ProductListSerializer(product).data

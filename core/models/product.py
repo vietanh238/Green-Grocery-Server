@@ -67,6 +67,9 @@ class Product(BaseModel):
         default=0
     )
 
+    last_restock_date = models.DateTimeField(null=True, blank=True)
+    last_sold_date = models.DateTimeField(null=True, blank=True)
+
     class Meta:
         db_table = 'product'
         ordering = ['-created_at']
@@ -75,6 +78,8 @@ class Product(BaseModel):
             models.Index(fields=['bar_code']),
             models.Index(fields=['category', 'is_active']),
             models.Index(fields=['stock_quantity']),
+            models.Index(fields=['name']),
+            models.Index(fields=['-total_sold']),
         ]
 
     def __str__(self):
@@ -97,3 +102,17 @@ class Product(BaseModel):
         if self.cost_price > 0:
             return ((self.price - self.cost_price) / self.cost_price) * 100
         return 0
+
+    @property
+    def stock_value(self):
+        return self.stock_quantity * self.cost_price
+
+    @property
+    def stock_status(self):
+        if self.stock_quantity == 0:
+            return 'out_of_stock'
+        elif self.is_reorder:
+            return 'low_stock'
+        elif self.is_overstock:
+            return 'overstock'
+        return 'in_stock'

@@ -17,6 +17,12 @@ class BulkProductSerializer(serializers.Serializer):
     quantity = serializers.IntegerField(required=True)
     unit = serializers.CharField(
         max_length=50, required=True, trim_whitespace=True)
+    reorderPoint = serializers.IntegerField(required=False, default=10)
+    maxStockLevel = serializers.IntegerField(required=False, default=1000)
+    supplierName = serializers.CharField(
+        max_length=255, required=False, allow_blank=True, trim_whitespace=True)
+    hasExpiry = serializers.BooleanField(required=False, default=False)
+    shelfLifeDays = serializers.IntegerField(required=False, allow_null=True)
 
     def validate_name(self, value):
         if not value or not value.strip():
@@ -59,6 +65,16 @@ class BulkProductSerializer(serializers.Serializer):
             raise serializers.ValidationError("Số lượng không được âm")
         return value
 
+    def validate(self, data):
+        if data.get('costPrice', 0) >= data.get('price', 0):
+            raise serializers.ValidationError("Giá bán phải lớn hơn giá nhập")
+
+        if data.get('hasExpiry') and not data.get('shelfLifeDays'):
+            raise serializers.ValidationError(
+                "Vui lòng nhập thời hạn sử dụng khi sản phẩm có HSD")
+
+        return data
+
 
 class BulkCreateProductsSerializer(serializers.Serializer):
     products = BulkProductSerializer(many=True, required=True)
@@ -71,5 +87,16 @@ class BulkCreateProductsSerializer(serializers.Serializer):
         if len(value) > 1000:
             raise serializers.ValidationError(
                 "Không thể thêm quá 1000 sản phẩm cùng lúc")
+
+        barcodes = [p['barCode'] for p in value]
+        skus = [p['sku'] for p in value]
+
+        if len(barcodes) != len(set(barcodes)):
+            raise serializers.ValidationError(
+                "Có barcode bị trùng lặp trong danh sách")
+
+        if len(skus) != len(set(skus)):
+            raise serializers.ValidationError(
+                "Có SKU bị trùng lặp trong danh sách")
 
         return value

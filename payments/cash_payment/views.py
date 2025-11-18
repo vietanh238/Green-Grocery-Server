@@ -1,98 +1,187 @@
-
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from django.db import transaction
-import json
+from django.utils import timezone
 from channels.layers import get_channel_layer
 from asgiref.sync import async_to_sync
-from core.models import Product, Category
-from core.models import Payment
 import time
+
+from core.models import Payment, Order, OrderItem, Product
+from .serializers import CashPaymentSerializer
 
 
 class CashPaymentView(APIView):
 
     def post(self, request):
-        payload = request.data
+        try:
+            serializer = CashPaymentSerializer(data=request.data)
 
-        required_fields = ["amount", "items"]
-        missing = [f for f in required_fields if f not in payload]
-        if missing:
-            return Response(
-                {"error": f"Missing fields: {', '.join(missing)}"},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+            if not serializer.is_valid():
+                return Response({
+                    'status': '2',
+                    'response': {
+                        'error_code': '001',
+                        'error_message_us': 'Validation error',
+                        'error_message_vn': 'Dữ liệu không hợp lệ',
+                        'errors': serializer.errors
+                    }
+                }, status=status.HTTP_400_BAD_REQUEST)
 
-        amount = int(payload["amount"])
-        items = payload.get("items", [])
-        payment_method = payload.get("payment_method", "cash")
+            data = serializer.validated_data
+            amount = data['amount']
+            items_data = data['items']
+            payment_method = data.get('payment_method', 'cash')
+            note = data.get('note', '')
 
-        with transaction.atomic():
-            order_code = f"CASH{int(time.time() * 1000)}"
+            with transaction.atomic():
+                order_code = f"CASH{int(time.time() * 1000)}"
 
-            payment = Payment.objects.create(
-                order_code=order_code,
-                amount=amount,
-                description=f"Thanh toán tiền mặt - {order_code}",
-                status="paid",
-                items=json.dumps(items),
-                transaction_id=order_code
-            )
+                subtotal = sum(item['total_price'] for item in items_data)
 
-            list_product_reorder = []
+                order = Order.objects.create(
+                    order_code=order_code,
+                    user=request.user if request.user.is_authenticated else None,
+                    status='paid',
+                    subtotal=subtotal,
+                    total_amount=amount,
+                    paid_amount=amount,
+                    payment_method=payment_method,
+                    note=note,
+                    completed_at=timezone.now(),
+                    created_by=request.user if request.user.is_authenticated else None,
+                    updated_by=request.user if request.user.is_authenticated else None
+                )
 
-            for item in items:
-                bar_code = item.get('bar_code') or item.get('sku')
-                quantity = item.get('quantity', 0)
+                order_items = []
+                list_product_reorder = []
 
-                if bar_code:
+                for item_data in items_data:
                     try:
-                        product = Product.objects.get(bar_code=bar_code)
+                        product = Product.objects.get(
+                            bar_code=item_data['bar_code'],
+                            is_active=True
+                        )
+
+                        if product.stock_quantity < item_data['quantity']:
+                            raise ValueError(
+                                f"Sản phẩm {product.name} không đủ số lượng trong kho")
+
+                        order_item = OrderItem(
+                            order=order,
+                            product=product,
+                            product_name=item_data['name'],
+                            product_sku=item_data['sku'],
+                            quantity=item_data['quantity'],
+                            unit_price=item_data['unit_price'],
+                            total_price=item_data['total_price'],
+                            cost_price=product.cost_price,
+                            created_by=request.user if request.user.is_authenticated else None,
+                            updated_by=request.user if request.user.is_authenticated else None
+                        )
+                        order_items.append(order_item)
+
                         product.stock_quantity = max(
-                            0, product.stock_quantity - quantity)
+                            0, product.stock_quantity - item_data['quantity'])
+                        product.total_sold += item_data['quantity']
+                        product.total_revenue += float(
+                            item_data['total_price'])
+                        product.last_sold_date = timezone.now()
+                        product.save()
 
                         if product.stock_quantity <= product.reorder_point:
-                            list_product_reorder.append(product.bar_code)
+                            list_product_reorder.append({
+                                'bar_code': product.bar_code,
+                                'name': product.name,
+                                'stock_quantity': product.stock_quantity,
+                                'reorder_point': product.reorder_point
+                            })
 
-                        product.save()
                     except Product.DoesNotExist:
-                        pass
+                        order_item = OrderItem(
+                            order=order,
+                            product=None,
+                            product_name=item_data['name'],
+                            product_sku=item_data['sku'],
+                            quantity=item_data['quantity'],
+                            unit_price=item_data['unit_price'],
+                            total_price=item_data['total_price'],
+                            cost_price=0,
+                            created_by=request.user if request.user.is_authenticated else None,
+                            updated_by=request.user if request.user.is_authenticated else None
+                        )
+                        order_items.append(order_item)
 
-            channel_layer = get_channel_layer()
-            async_to_sync(channel_layer.group_send)(
-                "broadcast",
-                {
-                    "type": "payment_success",
-                    "data": {
-                        "orderCode": payment.order_code,
-                        "amount": amount,
-                        "paymentMethod": payment_method,
-                        "message": "Thanh toán tiền mặt thành công"
-                    }
-                }
-            )
+                OrderItem.objects.bulk_create(order_items)
 
-            if list_product_reorder:
+                payment = Payment.objects.create(
+                    order=order,
+                    order_code=order_code,
+                    transaction_id=order_code,
+                    payment_method=payment_method,
+                    amount=amount,
+                    paid_amount=amount,
+                    status='paid',
+                    description=f"Thanh toán {payment_method} - {order_code}",
+                    paid_at=timezone.now(),
+                    created_by=request.user if request.user.is_authenticated else None,
+                    updated_by=request.user if request.user.is_authenticated else None
+                )
+
+                channel_layer = get_channel_layer()
                 async_to_sync(channel_layer.group_send)(
                     "broadcast",
                     {
-                        "type": "message",
+                        "type": "payment_success",
                         "data": {
-                            'message_type': 'remind_reorder',
-                            "items": list_product_reorder,
-                            "message": "Sản phẩm gần sắp hết"
+                            "message_type": "payment_success",
+                            "orderCode": order_code,
+                            "amount": float(amount),
+                            "paymentMethod": payment_method,
+                            "message": f"Thanh toán {payment_method} thành công"
                         }
                     }
                 )
 
+                if list_product_reorder:
+                    async_to_sync(channel_layer.group_send)(
+                        "broadcast",
+                        {
+                            "type": "message",
+                            "data": {
+                                'message_type': 'remind_reorder',
+                                "items": list_product_reorder,
+                                "message": "Có sản phẩm sắp hết hàng"
+                            }
+                        }
+                    )
+
+                return Response({
+                    'status': '1',
+                    'response': {
+                        "orderCode": order_code,
+                        "amount": float(amount),
+                        "status": "paid",
+                        "paymentMethod": payment_method,
+                        "message": "Thanh toán thành công"
+                    }
+                }, status=status.HTTP_200_OK)
+
+        except ValueError as ve:
             return Response({
-                'status': '1',
+                'status': '2',
                 'response': {
-                    "orderCode": order_code,
-                    "amount": amount,
-                    "status": "paid",
-                    "paymentMethod": payment_method,
-                    "message": "Thanh toán thành công"
+                    'error_code': '002',
+                    'error_message_us': str(ve),
+                    'error_message_vn': str(ve)
                 }
-            }, status=status.HTTP_200_OK)
+            }, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as ex:
+            return Response({
+                'status': '2',
+                'response': {
+                    'error_code': '9999',
+                    'error_message_us': 'An internal server error occurred.',
+                    'error_message_vn': f'Lỗi hệ thống: {str(ex)}'
+                }
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

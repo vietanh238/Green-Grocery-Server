@@ -3,29 +3,20 @@ from rest_framework import serializers
 
 class ProductUpdateSerializer(serializers.Serializer):
     id = serializers.IntegerField(required=True)
-    productName = serializers.CharField(
-        max_length=255, required=True, trim_whitespace=True)
-    sku = serializers.CharField(
-        max_length=64, required=True, trim_whitespace=True)
-    barCode = serializers.CharField(
-        max_length=64, required=True, trim_whitespace=True)
-    category = serializers.CharField(
-        max_length=255, required=True, trim_whitespace=True)
+    productName = serializers.CharField(max_length=255, required=True, trim_whitespace=True)
+    sku = serializers.CharField(max_length=64, required=True, trim_whitespace=True)
+    barCode = serializers.CharField(max_length=64, required=True, trim_whitespace=True)
+    category = serializers.CharField(max_length=255, required=True, trim_whitespace=True)
     categoryId = serializers.IntegerField(required=False, allow_null=True)
-    unit = serializers.CharField(
-        max_length=50, required=True, trim_whitespace=True)
-    costPrice = serializers.DecimalField(
-        max_digits=15, decimal_places=2, required=True)
-    price = serializers.DecimalField(
-        max_digits=15, decimal_places=2, required=True)
+    unit = serializers.CharField(max_length=50, required=True, trim_whitespace=True)
+    costPrice = serializers.DecimalField(max_digits=15, decimal_places=2, required=True)
+    price = serializers.DecimalField(max_digits=15, decimal_places=2, required=True)
     quantity = serializers.IntegerField(required=True)
     reorderPoint = serializers.IntegerField(required=True)
     maxStockLevel = serializers.IntegerField(required=True)
     supplierId = serializers.IntegerField(required=False, allow_null=True)
-    image = serializers.URLField(
-        max_length=500, required=False, allow_blank=True)
-    description = serializers.CharField(
-        required=False, allow_blank=True, trim_whitespace=True)
+    image = serializers.URLField(max_length=500, required=False, allow_blank=True)
+    description = serializers.CharField(required=False, allow_blank=True, trim_whitespace=True)
     hasExpiry = serializers.BooleanField(default=False)
     shelfLifeDays = serializers.IntegerField(required=False, allow_null=True)
 
@@ -36,8 +27,7 @@ class ProductUpdateSerializer(serializers.Serializer):
 
     def validate_productName(self, value):
         if not value or not value.strip():
-            raise serializers.ValidationError(
-                "Tên sản phẩm không được để trống")
+            raise serializers.ValidationError("Tên sản phẩm không được để trống")
         return value.strip()
 
     def validate_sku(self, value):
@@ -87,8 +77,7 @@ class ProductUpdateSerializer(serializers.Serializer):
 
     def validate_shelfLifeDays(self, value):
         if value is not None and value <= 0:
-            raise serializers.ValidationError(
-                "Thời hạn sử dụng phải lớn hơn 0")
+            raise serializers.ValidationError("Thời hạn sử dụng phải lớn hơn 0")
         return value
 
     def validate(self, data):

@@ -3,6 +3,7 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from rest_framework import status
 from django.db import transaction
+from django.utils import timezone
 from core.models import Product, Category, Supplier
 from .serializer import ProductCreateSerializer
 from product.get_product.serializers import ProductListSerializer
@@ -29,7 +30,7 @@ class CreateProductView(APIView):
 
             data = serializer.validated_data
 
-            if Product.objects.filter(sku=data['sku']).exists():
+            if Product.objects.filter(sku=data['sku'], is_active=True).exists():
                 return Response({
                     'status': '2',
                     'response': {
@@ -39,7 +40,7 @@ class CreateProductView(APIView):
                     }
                 }, status=status.HTTP_400_BAD_REQUEST)
 
-            if Product.objects.filter(bar_code=data['barCode']).exists():
+            if Product.objects.filter(bar_code=data['barCode'], is_active=True).exists():
                 return Response({
                     'status': '2',
                     'response': {
@@ -85,6 +86,8 @@ class CreateProductView(APIView):
                     description=data.get('description', ''),
                     has_expiry=data.get('hasExpiry', False),
                     shelf_life_days=data.get('shelfLifeDays'),
+                    last_restock_date=timezone.now(
+                    ) if data['quantity'] > 0 else None,
                     created_by=user,
                     updated_by=user
                 )

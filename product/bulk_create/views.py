@@ -4,7 +4,8 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework import status
 from django.db import transaction
 from django.db.models import F
-from core.models import Product, Category
+from django.utils import timezone
+from core.models import Product, Category, Supplier
 from .serializer import BulkCreateProductsSerializer
 
 
@@ -38,13 +39,20 @@ class BulkCreateProductsView(APIView):
             skus = [p['sku'] for p in products_data]
 
             existing_products_by_barcode = {
-                p.bar_code: p for p in Product.objects.filter(bar_code__in=barcodes)
+                p.bar_code: p for p in Product.objects.filter(
+                    bar_code__in=barcodes,
+                    is_active=True
+                )
             }
             existing_products_by_sku = {
-                p.sku: p for p in Product.objects.filter(sku__in=skus)
+                p.sku: p for p in Product.objects.filter(
+                    sku__in=skus,
+                    is_active=True
+                )
             }
 
             category_cache = {}
+            supplier_cache = {}
             products_to_create = []
             products_to_update = []
 
@@ -66,6 +74,7 @@ class BulkCreateProductsView(APIView):
                         existing_product.price = product_data['price']
                         existing_product.cost_price = product_data['costPrice']
                         existing_product.updated_by = user
+                        existing_product.last_restock_date = timezone.now()
 
                         products_to_update.append(existing_product)
                         update_count += 1
@@ -81,17 +90,39 @@ class BulkCreateProductsView(APIView):
                             )
                             category_cache[category_name] = category
 
+                        supplier = None
+                        supplier_name = product_data.get(
+                            'supplierName', '').strip()
+                        if supplier_name:
+                            if supplier_name not in supplier_cache:
+                                try:
+                                    supplier = Supplier.objects.get(
+                                        name=supplier_name,
+                                        is_active=True
+                                    )
+                                    supplier_cache[supplier_name] = supplier
+                                except Supplier.DoesNotExist:
+                                    pass
+                            else:
+                                supplier = supplier_cache[supplier_name]
+
                         products_to_create.append(Product(
                             name=product_data['name'],
                             sku=sku,
                             bar_code=barcode,
                             category=category_cache[category_name],
+                            supplier=supplier,
                             unit=product_data['unit'],
                             cost_price=product_data['costPrice'],
                             price=product_data['price'],
                             stock_quantity=product_data['quantity'],
-                            reorder_point=10,
-                            max_stock_level=1000,
+                            reorder_point=product_data.get('reorderPoint', 10),
+                            max_stock_level=product_data.get(
+                                'maxStockLevel', 1000),
+                            has_expiry=product_data.get('hasExpiry', False),
+                            shelf_life_days=product_data.get('shelfLifeDays'),
+                            last_restock_date=timezone.now(
+                            ) if product_data['quantity'] > 0 else None,
                             created_by=user,
                             updated_by=user
                         ))
@@ -99,6 +130,7 @@ class BulkCreateProductsView(APIView):
                 except Exception as e:
                     failed_count += 1
                     errors.append({
+                        'row': index + 1,
                         'product': product_data.get('name', 'Unknown'),
                         'sku': product_data.get('sku', 'Unknown'),
                         'message': str(e)
@@ -106,7 +138,8 @@ class BulkCreateProductsView(APIView):
 
             with transaction.atomic():
                 if products_to_create:
-                    Product.objects.bulk_create(products_to_create)
+                    Product.objects.bulk_create(
+                        products_to_create, batch_size=500)
                     success_count = len(products_to_create)
 
                 if products_to_update:

@@ -8,8 +8,8 @@ from asgiref.sync import async_to_sync
 from decouple import config
 
 from core.models import Payment, Order, OrderItem, Product
-from .services import create_payment_request, delete_payment
-from .serializers import CreatePaymentSerializer, PaymentDetailSerializer
+from ..services import create_payment_request, delete_payment
+from ..serializers import CreatePaymentSerializer, PaymentDetailSerializer
 
 CHECKSUM_KEY = config("PAYOS_CHECKSUM_KEY")
 

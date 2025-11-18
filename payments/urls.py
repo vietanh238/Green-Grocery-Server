@@ -1,6 +1,8 @@
+
 from django.urls import path
-from .views import CreatePaymentView, WebhookView
 from django.views.decorators.csrf import csrf_exempt
+from .views import WebhookView
+from .payment.views import CreatePaymentView
 from .cash_payment.views import CashPaymentView
 
 urlpatterns = [
