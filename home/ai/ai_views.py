@@ -18,10 +18,10 @@ class TrainAIModelView(APIView):
             cutoff_date = datetime.now() - timedelta(days=90)
 
             orders = Order.objects.filter(
-                user=request.user,
+                created_by=request.user,
                 created_at__gte=cutoff_date,
                 status='paid'
-            ).select_related('user')
+            ).select_related('created_by')
 
             sales_history = []
             for order in orders:
@@ -80,11 +80,11 @@ class GetReorderRecommendationsView(APIView):
 
     def get(self, request):
         try:
-            products = Product.objects.filter(user=request.user)
+            products = Product.objects.filter(created_by=request.user, is_active=True)
 
             cutoff_date = datetime.now() - timedelta(days=60)
             orders = Order.objects.filter(
-                user=request.user,
+                created_by=request.user,
                 created_at__gte=cutoff_date,
                 status='paid'
             )
@@ -177,7 +177,7 @@ class GetProductForecastView(APIView):
         try:
 
             try:
-                product = Product.objects.get(id=product_id, user=request.user)
+                product = Product.objects.get(id=product_id, created_by=request.user, is_active=True)
             except Product.DoesNotExist:
                 return Response({
                     'status': '2',
@@ -188,7 +188,7 @@ class GetProductForecastView(APIView):
 
             cutoff_date = datetime.now() - timedelta(days=60)
             orders = Order.objects.filter(
-                user=request.user,
+                created_by=request.user,
                 created_at__gte=cutoff_date,
                 status='paid'
             )

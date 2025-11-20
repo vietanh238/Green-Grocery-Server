@@ -6,3 +6,4 @@ class PurchaseOrderConfig(AppConfig):
     name = 'purchase_order'
 
 
+
