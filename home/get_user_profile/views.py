@@ -57,10 +57,22 @@ class QuickSearch(APIView):
                 Q(name__icontains=query) | Q(sku__icontains=query)
             ).values('id', 'name', 'sku', 'bar_code', 'price')[:5]
 
-            payments = Payment.objects.filter(
+            payments = Payment.objects.select_related('order').filter(
                 Q(is_active=True),
-                Q(order_code__icontains=query) | Q(buyer_name__icontains=query)
-            ).values('id', 'order_code', 'amount', 'buyer_name', 'created_at')[:5]
+                Q(order_code__icontains=query) | Q(order__buyer_name__icontains=query)
+            )[:5]
+
+            # Transform to dict with buyer_name from order
+            payments_data = [
+                {
+                    'id': p.id,
+                    'order_code': p.order_code,
+                    'amount': float(p.amount),
+                    'buyer_name': p.order.buyer_name if p.order and p.order.buyer_name else 'Khách lẻ',
+                    'created_at': p.created_at.isoformat()
+                }
+                for p in payments
+            ]
 
             customers = Customer.objects.filter(
                 Q(is_active=True),
@@ -72,7 +84,7 @@ class QuickSearch(APIView):
                 "status": "1",
                 "response": {
                     "products": list(products),
-                    "orders": list(payments),
+                    "orders": payments_data,
                     "customers": list(customers),
                 }
             }, status=status.HTTP_200_OK)

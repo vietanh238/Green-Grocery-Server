@@ -113,6 +113,12 @@ class CreatePaymentView(APIView):
 
                 OrderItem.objects.bulk_create(order_items)
 
+                # Try to create payment with PayOS
+                payos_data = {}
+                transaction_id = None
+                checkout_url = None
+                qr_code = None
+
                 try:
                     payos_buyer = None
                     if buyer_name or buyer_phone:
@@ -130,20 +136,26 @@ class CreatePaymentView(APIView):
                         cancel_url=cancel_url,
                         buyer=payos_buyer
                     )
-                except Exception as e:
-                    return Response({
-                        'status': '2',
-                        'response': {
-                            'error_code': '003',
-                            'error_message_us': f'PayOS error: {str(e)}',
-                            'error_message_vn': f'Lỗi kết nối PayOS: {str(e)}'
-                        }
-                    }, status=status.HTTP_502_BAD_GATEWAY)
 
-                payos_data = payos_res.get("data", {})
-                transaction_id = payos_data.get("paymentLinkId")
-                checkout_url = payos_data.get("checkoutUrl")
-                qr_code = payos_data.get("qrCode")
+                    print(f"PayOS Response: {payos_res}")  # Debug log
+
+                    payos_data = payos_res.get("data", {})
+                    transaction_id = payos_data.get("paymentLinkId")
+                    checkout_url = payos_data.get("checkoutUrl")
+                    qr_code = payos_data.get("qrCode")
+
+                except Exception as e:
+                    print(f"PayOS Error: {str(e)}")  # Debug log
+                    # Don't fail, continue with VietQR fallback
+
+                # Fallback: Generate VietQR if PayOS doesn't return QR code
+                if not qr_code:
+                    # Generate VietQR URL
+                    bank_id = "970436"  # Vietcombank
+                    account_no = "1019466120"
+                    account_name = "DUONG VIET ANH"
+                    qr_code = f"https://img.vietqr.io/image/{bank_id}-{account_no}-compact2.jpg?amount={int(amount)}&addInfo={description}&accountName={account_name}"
+                    print(f"Using VietQR fallback: {qr_code}")  # Debug log
 
                 payment = Payment.objects.create(
                     order=order,

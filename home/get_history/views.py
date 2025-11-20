@@ -121,7 +121,7 @@ class TransactionHistoryView(APIView):
     def _get_payment_transactions(self, user, date_from, date_to):
 
         return Payment.objects.filter(
-            user=user,
+            created_by=user,
             created_at__date__gte=date_from,
             created_at__date__lte=date_to
         ).order_by('-created_at')

@@ -26,7 +26,9 @@ class GetBusinessReport(APIView):
                 start_date = self.get_start_date(period)
                 end_date = now().date()
 
-            current_payments = Payment.objects.filter(
+            current_payments = Payment.objects.select_related('order').prefetch_related(
+                'order__items__product'
+            ).filter(
                 is_active=True,
                 status='paid',
                 created_at__date__gte=start_date,
@@ -35,7 +37,9 @@ class GetBusinessReport(APIView):
 
             prev_start = start_date - (end_date - start_date)
             prev_end = start_date - timedelta(days=1)
-            prev_payments = Payment.objects.filter(
+            prev_payments = Payment.objects.select_related('order').prefetch_related(
+                'order__items__product'
+            ).filter(
                 is_active=True,
                 status='paid',
                 created_at__date__gte=prev_start,
@@ -112,15 +116,14 @@ class GetBusinessReport(APIView):
     def calculate_total_cost(self, payments):
         total_cost = 0
         for payment in payments:
-            if payment.items:
+            if payment.order:
                 try:
-                    items = json.loads(payment.items) if isinstance(
-                        payment.items, str) else payment.items
-                    for item in items:
-                        cost_price = float(item.get('cost_price', 0))
-                        quantity = int(item.get('quantity', 0))
+                    # Access items through order relationship
+                    for item in payment.order.items.all():
+                        cost_price = float(item.cost_price)
+                        quantity = int(item.quantity)
                         total_cost += cost_price * quantity
-                except (json.JSONDecodeError, TypeError, ValueError):
+                except Exception:
                     pass
         return total_cost
 
@@ -128,15 +131,14 @@ class GetBusinessReport(APIView):
         product_sales = {}
 
         for payment in payments:
-            if payment.items:
+            if payment.order:
                 try:
-                    items = json.loads(payment.items) if isinstance(
-                        payment.items, str) else payment.items
-                    for item in items:
-                        sku = item.get('sku', 'unknown')
-                        name = item.get('name', '')
-                        quantity = int(item.get('quantity', 0))
-                        price = float(item.get('price', 0))
+                    # Access items through order relationship
+                    for item in payment.order.items.all():
+                        sku = item.product_sku
+                        name = item.product_name
+                        quantity = int(item.quantity)
+                        price = float(item.unit_price)
 
                         if sku not in product_sales:
                             product_sales[sku] = {
@@ -148,7 +150,7 @@ class GetBusinessReport(APIView):
 
                         product_sales[sku]['quantity'] += quantity
                         product_sales[sku]['revenue'] += int(quantity * price)
-                except (json.JSONDecodeError, TypeError, ValueError):
+                except Exception:
                     pass
 
         sorted_products = sorted(

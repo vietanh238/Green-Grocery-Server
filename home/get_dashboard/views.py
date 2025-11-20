@@ -21,14 +21,18 @@ class GetDashboardView(APIView):
             prev_start, prev_end = self.get_previous_date_range(
                 period, start_date)
 
-            current_payments = Payment.objects.filter(
+            current_payments = Payment.objects.select_related('order').prefetch_related(
+                'order__items__product'
+            ).filter(
                 is_active=True,
                 status='paid',
                 created_at__gte=start_date,
                 created_at__lte=end_date
             )
 
-            previous_payments = Payment.objects.filter(
+            previous_payments = Payment.objects.select_related('order').prefetch_related(
+                'order__items__product'
+            ).filter(
                 is_active=True,
                 status='paid',
                 created_at__gte=prev_start,
@@ -45,11 +49,12 @@ class GetDashboardView(APIView):
             prev_orders = previous_payments.count()
             prev_profit = self.calculate_total_profit(previous_payments)
 
-            today_customers = current_payments.values(
-                'buyer_phone').distinct().count()
+            today_customers = current_payments.filter(
+                order__buyer_phone__isnull=False
+            ).values('order__buyer_phone').distinct().count()
             new_customers = current_payments.filter(
-                buyer_phone__isnull=False
-            ).values('buyer_phone').distinct().count()
+                order__buyer_phone__isnull=False
+            ).values('order__buyer_phone').distinct().count()
 
             revenue_growth = self.calculate_growth(prev_revenue, today_revenue)
             order_growth = self.calculate_growth(prev_orders, today_orders)
@@ -62,6 +67,10 @@ class GetDashboardView(APIView):
             recent_sales = self.get_recent_sales(current_payments)
             top_products = self.get_top_products(current_payments)
             hourly_revenue = self.get_hourly_revenue(current_payments, period)
+
+            # Get inventory alerts
+            inventory_stats = self.get_inventory_stats()
+            low_stock_products = self.get_low_stock_products()
 
             return Response({
                 "status": "1",
@@ -81,6 +90,8 @@ class GetDashboardView(APIView):
                     "recent_sales": recent_sales,
                     "top_products": top_products,
                     "hourly_revenue": hourly_revenue,
+                    "inventory_stats": inventory_stats,
+                    "low_stock_products": low_stock_products,
                 }
             }, status=status.HTTP_200_OK)
 
@@ -141,17 +152,13 @@ class GetDashboardView(APIView):
     def calculate_total_profit(self, payments):
         total_profit = 0
         for payment in payments:
-            if payment.items:
+            if payment.order:
                 try:
-                    items = json.loads(payment.items) if isinstance(
-                        payment.items, str) else payment.items
-                    for item in items:
-                        cost_price = float(item.get('cost_price', 0))
-                        price = float(item.get('price', 0))
-                        quantity = int(item.get('quantity', 0))
-                        profit = (price - cost_price) * quantity
+                    # Access items through order relationship
+                    for item in payment.order.items.all():
+                        profit = float(item.profit) if item.profit else 0
                         total_profit += profit
-                except (json.JSONDecodeError, TypeError, ValueError):
+                except Exception:
                     pass
         return int(total_profit)
 
@@ -171,7 +178,7 @@ class GetDashboardView(APIView):
             {
                 'order_code': payment.order_code,
                 'created_at': payment.created_at.isoformat(),
-                'buyer_name': payment.buyer_name or 'Khách lẻ',
+                'buyer_name': payment.order.buyer_name if payment.order and payment.order.buyer_name else 'Khách lẻ',
                 'amount': int(payment.amount),
                 'status': payment.status
             }
@@ -182,15 +189,14 @@ class GetDashboardView(APIView):
         product_sales = {}
 
         for payment in payments:
-            if payment.items:
+            if payment.order:
                 try:
-                    items = json.loads(payment.items) if isinstance(
-                        payment.items, str) else payment.items
-                    for item in items:
-                        sku = item.get('sku', 'unknown')
-                        name = item.get('name', '')
-                        quantity = int(item.get('quantity', 0))
-                        price = float(item.get('price', 0))
+                    # Access items through order relationship
+                    for item in payment.order.items.all():
+                        sku = item.product_sku
+                        name = item.product_name
+                        quantity = item.quantity
+                        price = float(item.unit_price)
 
                         if sku not in product_sales:
                             product_sales[sku] = {
@@ -201,7 +207,7 @@ class GetDashboardView(APIView):
 
                         product_sales[sku]['quantity'] += quantity
                         product_sales[sku]['revenue'] += int(quantity * price)
-                except (json.JSONDecodeError, TypeError, ValueError):
+                except Exception:
                     pass
 
         sorted_products = sorted(
@@ -276,3 +282,71 @@ class GetDashboardView(APIView):
             ]
 
         return revenue_data
+
+    def get_inventory_stats(self):
+        """Get inventory statistics"""
+        try:
+            all_products = Product.objects.filter(is_active=True)
+
+            total_products = all_products.count()
+
+            low_stock = all_products.filter(
+                stock_quantity__gt=0,
+                stock_quantity__lte=F('reorder_point')
+            ).count()
+
+            out_of_stock = all_products.filter(stock_quantity=0).count()
+
+            overstock = all_products.filter(
+                stock_quantity__gt=F('max_stock_level')
+            ).count()
+
+            total_stock_value = all_products.aggregate(
+                total=Sum(F('stock_quantity') * F('cost_price'))
+            )['total'] or 0
+
+            return {
+                'total_products': total_products,
+                'low_stock_count': low_stock,
+                'out_of_stock_count': out_of_stock,
+                'overstock_count': overstock,
+                'total_stock_value': float(total_stock_value),
+                'alert_level': 'critical' if out_of_stock > 0 else 'warning' if low_stock > 0 else 'normal'
+            }
+        except Exception as e:
+            return {
+                'total_products': 0,
+                'low_stock_count': 0,
+                'out_of_stock_count': 0,
+                'overstock_count': 0,
+                'total_stock_value': 0,
+                'alert_level': 'normal'
+            }
+
+    def get_low_stock_products(self):
+        """Get list of products with low stock or out of stock"""
+        try:
+            # Get products that are out of stock or low stock
+            products = Product.objects.filter(
+                Q(stock_quantity=0) |
+                Q(stock_quantity__gt=0, stock_quantity__lte=F('reorder_point')),
+                is_active=True
+            ).select_related('category').order_by('stock_quantity')[:10]
+
+            result = []
+            for product in products:
+                result.append({
+                    'id': product.id,
+                    'name': product.name,
+                    'sku': product.sku,
+                    'stock_quantity': product.stock_quantity,
+                    'reorder_point': product.reorder_point,
+                    'unit': product.unit,
+                    'category': product.category.name if product.category else 'N/A',
+                    'status': 'out_of_stock' if product.stock_quantity == 0 else 'low_stock',
+                    'urgency': 'critical' if product.stock_quantity == 0 else 'high' if product.stock_quantity <= product.reorder_point // 2 else 'medium'
+                })
+
+            return result
+        except Exception as e:
+            return []

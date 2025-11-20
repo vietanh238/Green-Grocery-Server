@@ -42,6 +42,7 @@ INSTALLED_APPS = [
     'debit',
     'report',
     'payments',
+    'purchase_order',
     'channels'
 ]
 ASGI_APPLICATION = 'Server.asgi.application'
@@ -126,6 +127,15 @@ USE_TZ = True
 STATIC_URL = 'static/'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+# Email Configuration
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+EMAIL_HOST = 'smtp.gmail.com'
+EMAIL_PORT = 587
+EMAIL_USE_TLS = True
+EMAIL_HOST_USER = 'your-email@gmail.com'  # Replace with actual email
+EMAIL_HOST_PASSWORD = 'your-app-password'  # Replace with actual app password
+DEFAULT_FROM_EMAIL = 'Green Grocery <noreply@green-grocery.io.vn>'
 
 # JWT
 REST_FRAMEWORK = {
