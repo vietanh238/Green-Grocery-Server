@@ -31,17 +31,17 @@ class TrainAIModelView(APIView):
                     sales_history.append({
                         'product_id': item.product.id,
                         'quantity': item.quantity,
-                        'total_amount': float(item.quantity * item.price),
+                        'total_amount': float(item.quantity * item.unit_price),
                         'created_at': order.created_at.isoformat()
                     })
 
-            if len(sales_history) < 50:
+            if len(sales_history) < 5:
                 return Response({
                     'status': '2',
                     'response': {
                         'error_code': '001',
-                        'error_message_vn': f'Cần ít nhất 50 giao dịch để train AI. Hiện tại có {len(sales_history)} giao dịch.',
-                        'suggestion': 'Hãy tích lũy thêm dữ liệu bán hàng hoặc nhập dữ liệu cũ.'
+                        'error_message_vn': f'Cần ít nhất 5 giao dịch để train AI. Hiện tại có {len(sales_history)} giao dịch.',
+                        'suggestion': 'Hãy tích lũy thêm dữ liệu bán hàng. Lý tưởng nhất là có dữ liệu từ nhiều ngày khác nhau để AI học được pattern theo thời gian.'
                     }
                 }, status=status.HTTP_400_BAD_REQUEST)
 
@@ -97,7 +97,7 @@ class GetReorderRecommendationsView(APIView):
                     all_sales.append({
                         'product_id': item.product.id,
                         'quantity': item.quantity,
-                        'total_amount': float(item.quantity * item.price),
+                        'total_amount': float(item.quantity * item.unit_price),
                         'created_at': order.created_at.isoformat()
                     })
 
@@ -107,7 +107,8 @@ class GetReorderRecommendationsView(APIView):
                 product_sales = [
                     s for s in all_sales if s['product_id'] == product.id]
 
-                if len(product_sales) < 5:
+                # Giảm yêu cầu xuống 1 giao dịch per product
+                if len(product_sales) < 1:
                     continue
 
                 predictions = ai_forecast_service.predict_demand(
@@ -201,7 +202,7 @@ class GetProductForecastView(APIView):
                     sales_history.append({
                         'product_id': item.product.id,
                         'quantity': item.quantity,
-                        'total_amount': float(item.quantity * item.price),
+                        'total_amount': float(item.quantity * item.unit_price),
                         'created_at': order.created_at.isoformat()
                     })
 

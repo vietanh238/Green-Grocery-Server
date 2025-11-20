@@ -44,18 +44,34 @@ class DemandForecastAI:
             product_data = daily_sales[daily_sales['product_id'] == product_id].sort_values(
                 'date')
 
-            if len(product_data) < 14:
+            # Giảm requirement xuống chỉ cần 1 ngày dữ liệu
+            if len(product_data) < 1:
                 continue
 
             product_data = product_data.set_index('date')
             product_data = product_data.asfreq('D', fill_value=0)
 
-            for i in range(7, len(product_data) - 7):
-                features = self._extract_features(product_data, i)
-                target = product_data.iloc[i + 7]['quantity']
+            # Với ít data, dùng lookback linh hoạt
+            total_days = len(product_data)
 
-                features_list.append(features)
-                targets_list.append(target)
+            # Nếu chỉ có 1-2 ngày, tạo 1 sample đơn giản
+            if total_days <= 2:
+                if total_days >= 1:
+                    features = self._extract_features_minimal(product_data, total_days - 1)
+                    # Target là quantity của ngày cuối (dự đoán ngày tiếp theo giống ngày này)
+                    target = product_data.iloc[-1]['quantity']
+                    features_list.append(features)
+                    targets_list.append(target)
+            else:
+                # Với 3+ ngày, dùng phương pháp time series
+                lookback = min(2, total_days - 1)
+                forecast_days = 1
+
+                for i in range(lookback, total_days - forecast_days):
+                    features = self._extract_features_simple(product_data, i, lookback)
+                    target = product_data.iloc[i + forecast_days]['quantity']
+                    features_list.append(features)
+                    targets_list.append(target)
 
         if not features_list:
             return None, None
@@ -66,6 +82,7 @@ class DemandForecastAI:
         return X, y
 
     def _extract_features(self, product_data, current_idx):
+        """Legacy feature extraction for 7-day lookback"""
         features = []
 
         last_7_days = product_data.iloc[current_idx -
@@ -89,19 +106,80 @@ class DemandForecastAI:
 
         return features
 
+    def _extract_features_simple(self, product_data, current_idx, lookback):
+        """Simplified feature extraction with flexible lookback period"""
+        features = []
+
+        # Get historical data (up to lookback days)
+        start_idx = max(0, current_idx - lookback)
+        historical_qty = product_data.iloc[start_idx:current_idx]['quantity'].values
+
+        # Pad with zeros if not enough history
+        if len(historical_qty) < lookback:
+            historical_qty = np.pad(historical_qty, (lookback - len(historical_qty), 0), 'constant', constant_values=0)
+
+        features.extend(historical_qty)
+
+        # Statistical features
+        historical_data = product_data.iloc[start_idx:current_idx]['quantity']
+        features.append(historical_data.mean() if len(historical_data) > 0 else 0)
+        features.append(historical_data.std() if len(historical_data) > 1 else 0)
+        features.append(historical_data.max() if len(historical_data) > 0 else 0)
+        features.append(historical_data.min() if len(historical_data) > 0 else 0)
+
+        # Time-based features
+        current_date = product_data.index[current_idx]
+        features.append(current_date.dayofweek)
+        features.append(current_date.day)
+        features.append(current_date.month)
+        features.append(1 if current_date.dayofweek >= 5 else 0)
+
+        return features
+
+    def _extract_features_minimal(self, product_data, current_idx):
+        """Minimal feature extraction for very limited data (1-2 days)"""
+        features = []
+
+        # Lấy tất cả quantity có sẵn (1-2 giá trị)
+        all_qty = product_data['quantity'].values
+
+        # Pad thành 2 values để consistent với model
+        if len(all_qty) == 1:
+            features.extend([0, all_qty[0]])  # [0, current_qty]
+        else:
+            features.extend(all_qty[:2])  # [first, second]
+
+        # Statistical features
+        features.append(all_qty.mean())
+        features.append(0)  # std = 0 cho 1 giá trị
+        features.append(all_qty.max())
+        features.append(all_qty.min())
+
+        # Time-based features
+        current_date = product_data.index[current_idx]
+        features.append(current_date.dayofweek)
+        features.append(current_date.day)
+        features.append(current_date.month)
+        features.append(1 if current_date.dayofweek >= 5 else 0)
+
+        return features
+
     def train(self, sales_history):
         X, y = self.prepare_training_data(sales_history)
 
-        if X is None or len(X) < 50:
+        # Giảm yêu cầu xuống 1 training sample để train được với ít data
+        if X is None or len(X) < 1:
             return False
 
         X_scaled = self.scaler.fit_transform(X)
 
+        # Điều chỉnh parameters để train được với ít samples
+        n_samples = len(X)
         self.model = RandomForestRegressor(
-            n_estimators=100,
-            max_depth=10,
-            min_samples_split=5,
-            min_samples_leaf=2,
+            n_estimators=min(50, max(10, n_samples * 2)),  # Adaptive
+            max_depth=min(5, max(2, n_samples)),  # Adaptive
+            min_samples_split=max(2, min(3, n_samples // 2)),  # Ít nhất 2
+            min_samples_leaf=1,  # Giảm xuống 1
             random_state=42,
             n_jobs=-1
         )

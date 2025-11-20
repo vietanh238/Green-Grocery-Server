@@ -155,11 +155,12 @@ class CashPaymentView(APIView):
                             async_to_sync(channel_layer.group_send)(
                                 "broadcast",
                                 {
-                                    "type": "message",
+                                    "type": "remind_reorder",
                                     "data": {
                                         'message_type': 'remind_reorder',
                                         "items": list_product_reorder,
-                                        "message": "Có sản phẩm sắp hết hàng"
+                                        "count": len(list_product_reorder),
+                                        "message": f"Có {len(list_product_reorder)} sản phẩm sắp hết hàng"
                                     }
                                 }
                             )
