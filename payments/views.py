@@ -9,6 +9,7 @@ from decouple import config
 from decimal import Decimal
 
 from core.models import Payment, Order, OrderItem, Product
+from core.services.inventory_service import InventoryService
 from .utils import verify_checksum
 
 CHECKSUM_KEY = config("PAYOS_CHECKSUM_KEY")
@@ -88,15 +89,31 @@ class WebhookView(APIView):
                         if order_item.product:
                             product = order_item.product
 
-                            # Update product stats - ensure Decimal compatibility
-                            old_quantity = product.stock_quantity
-                            product.stock_quantity = max(
-                                0, product.stock_quantity - order_item.quantity)
+                            # ✅ Use InventoryService để track xuất kho
+                            try:
+                                inventory_result = InventoryService.export_stock(
+                                    product_id=product.id,
+                                    quantity=order_item.quantity,
+                                    unit_price=order_item.unit_price,
+                                    reference_type='order',
+                                    reference_id=payment.order.id,
+                                    note=f"Thanh toán QR - Order: {payment.order_code}",
+                                    created_by=payment.created_by
+                                )
+
+                                # Get updated product
+                                product = inventory_result['product']
+
+                            except ValueError as ve:
+                                print(f"Inventory error: {ve}")
+                                # Continue processing other items
+
+                            # Update product sales stats
                             product.total_sold += int(order_item.quantity)
                             product.total_revenue += Decimal(str(order_item.total_price))
-                            product.last_sold_date = timezone.now()
                             product.save()
 
+                            # Check reorder point
                             if product.stock_quantity <= product.reorder_point:
                                 list_product_reorder.append({
                                     'bar_code': product.bar_code,

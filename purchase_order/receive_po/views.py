@@ -4,7 +4,8 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework import status
 from django.db import transaction
 from django.utils import timezone
-from core.models import PurchaseOrder, Product, InventoryTransaction
+from core.models import PurchaseOrder, Product
+from core.services.inventory_service import InventoryService
 from purchase_order.serializers import PurchaseOrderDetailSerializer
 
 
@@ -55,24 +56,23 @@ class ReceivePurchaseOrderView(APIView):
                         po_item.received_quantity += received_qty
                         po_item.save()
 
-                        # Update product stock
-                        product = po_item.product
-                        product.stock_quantity += received_qty
-                        product.last_restock_date = timezone.now()
-                        product.updated_by = request.user
-                        product.save()
+                        # ✅ Use InventoryService để track nhập kho
+                        try:
+                            inventory_result = InventoryService.import_stock(
+                                product_id=po_item.product.id,
+                                quantity=received_qty,
+                                unit_price=po_item.unit_price,
+                                reference_type='purchase_order',
+                                reference_id=po.id,
+                                note=f'Nhập hàng từ PO {po.po_code} - {po.supplier.name if po.supplier else "N/A"}',
+                                created_by=request.user
+                            )
 
-                        # Create inventory transaction
-                        InventoryTransaction.objects.create(
-                            transaction_type='purchase',
-                            product=product,
-                            quantity=received_qty,
-                            unit_price=po_item.unit_price,
-                            reference_code=po.po_code,
-                            note=f'Nhập hàng từ đơn {po.po_code}',
-                            created_by=request.user,
-                            updated_by=request.user
-                        )
+                            print(f"✅ Imported {received_qty} {po_item.product.name} from PO {po.po_code}")
+
+                        except ValueError as ve:
+                            print(f"❌ Inventory import error: {ve}")
+                            raise ValueError(str(ve))
 
                 # Update PO status
                 all_received = all(
@@ -84,7 +84,7 @@ class ReceivePurchaseOrderView(APIView):
                     po.status = 'received'
                     po.received_date = timezone.now().date()
                 else:
-                    po.status = 'approved'  # Partial receive
+                    po.status = 'partial'  # Partial receive
 
                 po.updated_by = request.user
                 po.save()

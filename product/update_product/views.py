@@ -5,6 +5,7 @@ from rest_framework import status
 from django.db import transaction
 from django.utils import timezone
 from core.models import Product, Category, Supplier
+from core.services.inventory_service import InventoryService
 from .serializer import ProductUpdateSerializer
 from product.get_product.serializers import ProductListSerializer
 
@@ -92,7 +93,6 @@ class UpdateProductView(APIView):
                 product.unit = data['unit']
                 product.cost_price = data['costPrice']
                 product.price = data['price']
-                product.stock_quantity = data['quantity']
                 product.reorder_point = data['reorderPoint']
                 product.max_stock_level = data['maxStockLevel']
                 product.image = data.get('image', '')
@@ -100,11 +100,25 @@ class UpdateProductView(APIView):
                 product.has_expiry = data.get('hasExpiry', False)
                 product.shelf_life_days = data.get('shelfLifeDays')
                 product.updated_by = user
-
-                if data['quantity'] > old_quantity:
-                    product.last_restock_date = timezone.now()
-
                 product.save()
+
+                # Handle stock quantity change via inventory adjustment
+                new_quantity = data['quantity']
+                if new_quantity != old_quantity:
+                    quantity_diff = new_quantity - old_quantity
+                    InventoryService.create_transaction(
+                        product=product,
+                        transaction_type='adjustment',
+                        quantity=quantity_diff,
+                        unit_price=product.cost_price,
+                        reference_type='manual_adjustment',
+                        reference_id=product.id,
+                        note=f'Điều chỉnh tồn kho từ {old_quantity} thành {new_quantity}',
+                        user=user
+                    )
+                    if new_quantity > old_quantity:
+                        product.last_restock_date = timezone.now()
+                        product.save()
 
             product_data = ProductListSerializer(product).data
 

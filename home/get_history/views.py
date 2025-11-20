@@ -11,6 +11,8 @@ from core.models import Order, Payment, OrderItem
 class TransactionHistoryView(APIView):
     """
     API để lấy lịch sử giao dịch (đơn hàng gần đây)
+    """
+    permission_classes = [IsAuthenticated]
     Hỗ trợ filter theo: date, type, status, payment_method
     """
     permission_classes = [IsAuthenticated]

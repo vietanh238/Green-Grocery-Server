@@ -10,6 +10,7 @@ from decimal import Decimal
 import time
 
 from core.models import Payment, Order, OrderItem, Product
+from core.services.inventory_service import InventoryService
 from .serializers import CashPaymentSerializer
 
 
@@ -66,9 +67,23 @@ class CashPaymentView(APIView):
                             is_active=True
                         )
 
-                        if product.stock_quantity < item_data['quantity']:
-                            raise ValueError(
-                                f"Sản phẩm {product.name} không đủ số lượng trong kho")
+                        # ✅ Use InventoryService để track xuất kho
+                        try:
+                            inventory_result = InventoryService.export_stock(
+                                product_id=product.id,
+                                quantity=item_data['quantity'],
+                                unit_price=item_data['unit_price'],
+                                reference_type='order',
+                                reference_id=None,  # Will update after order saved
+                                note=f"Bán hàng - Order: {order_code}",
+                                created_by=request.user if request.user.is_authenticated else None
+                            )
+
+                            # Get updated product from inventory service
+                            product = inventory_result['product']
+
+                        except ValueError as ve:
+                            raise ValueError(str(ve))
 
                         order_item = OrderItem(
                             order=order,
@@ -84,14 +99,12 @@ class CashPaymentView(APIView):
                         )
                         order_items.append(order_item)
 
-                        # Update product stats - ensure Decimal compatibility
-                        product.stock_quantity = max(
-                            0, product.stock_quantity - item_data['quantity'])
+                        # Update product sales stats
                         product.total_sold += int(item_data['quantity'])
                         product.total_revenue += Decimal(str(item_data['total_price']))
-                        product.last_sold_date = timezone.now()
                         product.save()
 
+                        # Check reorder point
                         if product.stock_quantity <= product.reorder_point:
                             list_product_reorder.append({
                                 'bar_code': product.bar_code,
@@ -101,6 +114,7 @@ class CashPaymentView(APIView):
                             })
 
                     except Product.DoesNotExist:
+                        # Product not found - create order item without inventory tracking
                         order_item = OrderItem(
                             order=order,
                             product=None,

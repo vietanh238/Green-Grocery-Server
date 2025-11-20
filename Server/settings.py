@@ -43,6 +43,7 @@ INSTALLED_APPS = [
     'report',
     'payments',
     'purchase_order',
+    'inventory',
     'channels'
 ]
 ASGI_APPLICATION = 'Server.asgi.application'

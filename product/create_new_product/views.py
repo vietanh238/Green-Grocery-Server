@@ -5,6 +5,7 @@ from rest_framework import status
 from django.db import transaction
 from django.utils import timezone
 from core.models import Product, Category, Supplier
+from core.services.inventory_service import InventoryService
 from .serializer import ProductCreateSerializer
 from product.get_product.serializers import ProductListSerializer
 
@@ -70,6 +71,7 @@ class CreateProductView(APIView):
                     except Supplier.DoesNotExist:
                         pass
 
+                # Create product with initial stock = 0
                 product = Product.objects.create(
                     name=data['productName'],
                     sku=data['sku'],
@@ -79,18 +81,32 @@ class CreateProductView(APIView):
                     unit=data['unit'],
                     cost_price=data['costPrice'],
                     price=data['price'],
-                    stock_quantity=data['quantity'],
+                    stock_quantity=0,  # Start with 0
                     reorder_point=data['reorderPoint'],
                     max_stock_level=data['maxStockLevel'],
                     image=data.get('image', ''),
                     description=data.get('description', ''),
                     has_expiry=data.get('hasExpiry', False),
                     shelf_life_days=data.get('shelfLifeDays'),
-                    last_restock_date=timezone.now(
-                    ) if data['quantity'] > 0 else None,
+                    last_restock_date=None,
                     created_by=user,
                     updated_by=user
                 )
+
+                # Create inventory transaction for initial stock if > 0
+                if data['quantity'] > 0:
+                    InventoryService.create_transaction(
+                        product=product,
+                        transaction_type='import',
+                        quantity=data['quantity'],
+                        unit_price=data['costPrice'],
+                        reference_type='initial_stock',
+                        reference_id=product.id,
+                        note='Tồn kho đầu - Tạo sản phẩm mới',
+                        user=user
+                    )
+                    product.last_restock_date = timezone.now()
+                    product.save()
 
             product_data = ProductListSerializer(product).data
 

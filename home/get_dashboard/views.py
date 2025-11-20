@@ -72,26 +72,47 @@ class GetDashboardView(APIView):
             inventory_stats = self.get_inventory_stats()
             low_stock_products = self.get_low_stock_products()
 
+            # ✅ Enhanced metrics for WinMart/CircleK standard
+            avg_order_value = float(today_revenue / today_orders) if today_orders > 0 else 0
+            payment_methods_breakdown = self.get_payment_methods_breakdown(current_payments)
+            category_revenue = self.get_category_revenue(current_payments)
+            inventory_valuation = self.get_inventory_valuation()
+            peak_hour = self.get_peak_hour(current_payments)
+
             return Response({
                 "status": "1",
                 "response": {
+                    # Core metrics
                     "today_revenue": int(today_revenue),
                     "today_orders": today_orders,
                     "today_profit": today_profit,
                     "today_customers": today_customers,
                     "new_customers": new_customers,
                     "profit_margin": float(profit_margin),
+                    "avg_order_value": float(avg_order_value),
+
+                    # Growth metrics
                     "revenue_growth": float(revenue_growth),
                     "order_growth": float(order_growth),
                     "profit_growth": float(profit_growth),
                     "customer_growth": float(customer_growth),
                     "revenue_comparison": int(today_revenue) - int(prev_revenue),
                     "order_comparison": today_orders - prev_orders,
+
+                    # Sales data
                     "recent_sales": recent_sales,
                     "top_products": top_products,
                     "hourly_revenue": hourly_revenue,
+                    "peak_hour": peak_hour,
+
+                    # Inventory
                     "inventory_stats": inventory_stats,
+                    "inventory_valuation": inventory_valuation,
                     "low_stock_products": low_stock_products,
+
+                    # Analytics
+                    "payment_methods": payment_methods_breakdown,
+                    "category_revenue": category_revenue,
                 }
             }, status=status.HTTP_200_OK)
 
@@ -350,3 +371,137 @@ class GetDashboardView(APIView):
             return result
         except Exception as e:
             return []
+
+    def get_payment_methods_breakdown(self, payments):
+        """Get revenue breakdown by payment methods"""
+        try:
+            cash_count = 0
+            qr_count = 0
+            cash_total = 0
+            qr_total = 0
+
+            for payment in payments:
+                if payment.order:
+                    if payment.order.payment_method == 'cash':
+                        cash_count += 1
+                        cash_total += float(payment.amount)
+                    elif payment.order.payment_method == 'qr':
+                        qr_count += 1
+                        qr_total += float(payment.amount)
+
+            total_revenue = cash_total + qr_total
+
+            return {
+                'cash': {
+                    'count': cash_count,
+                    'total': int(cash_total),
+                    'percentage': round((cash_total / total_revenue * 100), 2) if total_revenue > 0 else 0
+                },
+                'qr': {
+                    'count': qr_count,
+                    'total': int(qr_total),
+                    'percentage': round((qr_total / total_revenue * 100), 2) if total_revenue > 0 else 0
+                }
+            }
+        except Exception as e:
+            return {'cash': {'count': 0, 'total': 0, 'percentage': 0}, 'qr': {'count': 0, 'total': 0, 'percentage': 0}}
+
+    def get_category_revenue(self, payments):
+        """Get revenue breakdown by product categories"""
+        try:
+            category_data = {}
+
+            for payment in payments:
+                if payment.order:
+                    for item in payment.order.items.all():
+                        if item.product and item.product.category:
+                            category_name = item.product.category.name
+                            revenue = float(item.total_price)
+
+                            if category_name not in category_data:
+                                category_data[category_name] = {
+                                    'revenue': 0,
+                                    'quantity': 0,
+                                    'items_count': 0
+                                }
+
+                            category_data[category_name]['revenue'] += revenue
+                            category_data[category_name]['quantity'] += item.quantity
+                            category_data[category_name]['items_count'] += 1
+
+            # Sort by revenue and get top 10
+            sorted_categories = sorted(
+                [{'name': name, **data} for name, data in category_data.items()],
+                key=lambda x: x['revenue'],
+                reverse=True
+            )[:10]
+
+            # Calculate percentages
+            total_revenue = sum(cat['revenue'] for cat in sorted_categories)
+            for cat in sorted_categories:
+                cat['revenue'] = int(cat['revenue'])
+                cat['percentage'] = round((cat['revenue'] / total_revenue * 100), 2) if total_revenue > 0 else 0
+
+            return sorted_categories
+        except Exception as e:
+            return []
+
+    def get_inventory_valuation(self):
+        """Get detailed inventory valuation"""
+        try:
+            all_products = Product.objects.filter(is_active=True)
+
+            total_value = sum(
+                float(p.stock_quantity * p.cost_price) for p in all_products
+            )
+
+            total_retail_value = sum(
+                float(p.stock_quantity * p.price) for p in all_products
+            )
+
+            potential_profit = total_retail_value - total_value
+
+            return {
+                'total_cost_value': int(total_value),
+                'total_retail_value': int(total_retail_value),
+                'potential_profit': int(potential_profit),
+                'profit_margin': round((potential_profit / total_retail_value * 100), 2) if total_retail_value > 0 else 0
+            }
+        except Exception as e:
+            return {
+                'total_cost_value': 0,
+                'total_retail_value': 0,
+                'potential_profit': 0,
+                'profit_margin': 0
+            }
+
+    def get_peak_hour(self, payments):
+        """Get the peak sales hour"""
+        try:
+            hourly_revenue = {}
+            hourly_orders = {}
+
+            for payment in payments:
+                hour = payment.created_at.hour
+                amount = float(payment.amount)
+
+                if hour not in hourly_revenue:
+                    hourly_revenue[hour] = 0
+                    hourly_orders[hour] = 0
+
+                hourly_revenue[hour] += amount
+                hourly_orders[hour] += 1
+
+            if not hourly_revenue:
+                return None
+
+            peak_hour = max(hourly_revenue, key=hourly_revenue.get)
+
+            return {
+                'hour': peak_hour,
+                'revenue': int(hourly_revenue[peak_hour]),
+                'orders': hourly_orders[peak_hour],
+                'label': f"{peak_hour}:00 - {peak_hour + 1}:00"
+            }
+        except Exception as e:
+            return None
