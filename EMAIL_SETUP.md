@@ -210,3 +210,4 @@ Thay vì Gmail để:
 
 Sau khi cấu hình xong, mỗi khi tạo đơn đặt hàng, nhà cung cấp sẽ tự động nhận email đẹp mắt với đầy đủ thông tin!
 
+

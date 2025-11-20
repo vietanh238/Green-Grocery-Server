@@ -133,8 +133,8 @@ EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
 EMAIL_HOST = 'smtp.gmail.com'
 EMAIL_PORT = 587
 EMAIL_USE_TLS = True
-EMAIL_HOST_USER = 'your-email@gmail.com'  # Replace with actual email
-EMAIL_HOST_PASSWORD = 'your-app-password'  # Replace with actual app password
+EMAIL_HOST_USER = 'gocdevnhalam@gmail.com'  # Replace with actual email
+EMAIL_HOST_PASSWORD = 'ztev gezq lcot axyt'  # Replace with actual app password
 DEFAULT_FROM_EMAIL = 'Green Grocery <noreply@green-grocery.io.vn>'
 
 # JWT

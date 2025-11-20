@@ -84,3 +84,4 @@ class PurchaseOrderDetailSerializer(serializers.ModelSerializer):
             return obj.approved_by.last_name or obj.approved_by.username
         return None
 
+
