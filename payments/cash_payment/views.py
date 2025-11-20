@@ -134,7 +134,10 @@ class CashPaymentView(APIView):
                 # WebSocket notifications (optional - requires Redis)
                 try:
                     channel_layer = get_channel_layer()
+                    print(f"🔌 Channel layer: {channel_layer}")
+
                     if channel_layer:
+                        # Send payment success notification
                         async_to_sync(channel_layer.group_send)(
                             "broadcast",
                             {
@@ -150,8 +153,11 @@ class CashPaymentView(APIView):
                                 }
                             }
                         )
+                        print(f"✅ Payment success notification sent: {order_code}")
 
+                        # Send low stock notification
                         if list_product_reorder:
+                            print(f"🔔 Sending low stock alert for {len(list_product_reorder)} products")
                             async_to_sync(channel_layer.group_send)(
                                 "broadcast",
                                 {
@@ -164,9 +170,16 @@ class CashPaymentView(APIView):
                                     }
                                 }
                             )
+                            print(f"✅ Low stock notification sent: {list_product_reorder}")
+                        else:
+                            print("ℹ️ No products need reorder alert")
+                    else:
+                        print("⚠️ Channel layer is None - WebSocket not configured or Redis not running")
                 except Exception as ws_error:
                     # WebSocket failed but payment still successful
-                    print(f"WebSocket notification failed: {ws_error}")
+                    print(f"❌ WebSocket notification failed: {ws_error}")
+                    import traceback
+                    traceback.print_exc()
 
                 return Response({
                     'status': '1',
