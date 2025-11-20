@@ -6,6 +6,7 @@ from django.utils import timezone
 from channels.layers import get_channel_layer
 from asgiref.sync import async_to_sync
 from decouple import config
+from decimal import Decimal
 
 from core.models import Payment, Order, OrderItem, Product
 from .utils import verify_checksum
@@ -87,12 +88,12 @@ class WebhookView(APIView):
                         if order_item.product:
                             product = order_item.product
 
+                            # Update product stats - ensure Decimal compatibility
                             old_quantity = product.stock_quantity
                             product.stock_quantity = max(
                                 0, product.stock_quantity - order_item.quantity)
-                            product.total_sold += order_item.quantity
-                            product.total_revenue += float(
-                                order_item.total_price)
+                            product.total_sold += int(order_item.quantity)
+                            product.total_revenue += Decimal(str(order_item.total_price))
                             product.last_sold_date = timezone.now()
                             product.save()
 

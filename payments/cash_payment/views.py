@@ -6,6 +6,7 @@ from django.db import transaction
 from django.utils import timezone
 from channels.layers import get_channel_layer
 from asgiref.sync import async_to_sync
+from decimal import Decimal
 import time
 
 from core.models import Payment, Order, OrderItem, Product
@@ -83,11 +84,11 @@ class CashPaymentView(APIView):
                         )
                         order_items.append(order_item)
 
+                        # Update product stats - ensure Decimal compatibility
                         product.stock_quantity = max(
                             0, product.stock_quantity - item_data['quantity'])
-                        product.total_sold += item_data['quantity']
-                        product.total_revenue += float(
-                            item_data['total_price'])
+                        product.total_sold += int(item_data['quantity'])
+                        product.total_revenue += Decimal(str(item_data['total_price']))
                         product.last_sold_date = timezone.now()
                         product.save()
 
@@ -130,35 +131,41 @@ class CashPaymentView(APIView):
                     updated_by=request.user if request.user.is_authenticated else None
                 )
 
-                channel_layer = get_channel_layer()
-                async_to_sync(channel_layer.group_send)(
-                    "broadcast",
-                    {
-                        "type": "payment_success",
-                        "data": {
-                            "message_type": "payment_success",
-                            "order_code": order_code,
-                            "orderCode": order_code,  # Keep for backward compatibility
-                            "amount": float(amount),
-                            "payment_method": payment_method,
-                            "paymentMethod": payment_method,  # Keep for backward compatibility
-                            "message": f"Thanh toán {payment_method} thành công"
-                        }
-                    }
-                )
-
-                if list_product_reorder:
-                    async_to_sync(channel_layer.group_send)(
-                        "broadcast",
-                        {
-                            "type": "message",
-                            "data": {
-                                'message_type': 'remind_reorder',
-                                "items": list_product_reorder,
-                                "message": "Có sản phẩm sắp hết hàng"
+                # WebSocket notifications (optional - requires Redis)
+                try:
+                    channel_layer = get_channel_layer()
+                    if channel_layer:
+                        async_to_sync(channel_layer.group_send)(
+                            "broadcast",
+                            {
+                                "type": "payment_success",
+                                "data": {
+                                    "message_type": "payment_success",
+                                    "order_code": order_code,
+                                    "orderCode": order_code,
+                                    "amount": float(amount),
+                                    "payment_method": payment_method,
+                                    "paymentMethod": payment_method,
+                                    "message": f"Thanh toán {payment_method} thành công"
+                                }
                             }
-                        }
-                    )
+                        )
+
+                        if list_product_reorder:
+                            async_to_sync(channel_layer.group_send)(
+                                "broadcast",
+                                {
+                                    "type": "message",
+                                    "data": {
+                                        'message_type': 'remind_reorder',
+                                        "items": list_product_reorder,
+                                        "message": "Có sản phẩm sắp hết hàng"
+                                    }
+                                }
+                            )
+                except Exception as ws_error:
+                    # WebSocket failed but payment still successful
+                    print(f"WebSocket notification failed: {ws_error}")
 
                 return Response({
                     'status': '1',

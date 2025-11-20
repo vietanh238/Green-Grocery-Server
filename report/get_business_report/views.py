@@ -4,11 +4,11 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework import status
 from django.db.models import Sum, Count, F, ExpressionWrapper, DecimalField, Q
 from django.utils.timezone import now
-from datetime import timedelta
+from datetime import timedelta, datetime
+import calendar
 import json
 from core.models import Product, Category
 from core.models import Payment
-from datetime import timedelta, datetime
 
 class GetBusinessReport(APIView):
     permission_classes = [IsAuthenticated]
@@ -118,14 +118,14 @@ class GetBusinessReport(APIView):
         for payment in payments:
             if payment.order:
                 try:
-                    # Access items through order relationship
+                    # Access items through order relationship (already prefetched)
                     for item in payment.order.items.all():
-                        cost_price = float(item.cost_price)
+                        cost_price = float(item.cost_price) if item.cost_price else 0
                         quantity = int(item.quantity)
                         total_cost += cost_price * quantity
-                except Exception:
-                    pass
-        return total_cost
+                except Exception as e:
+                    continue
+        return int(total_cost)
 
     def get_top_products(self, payments):
         product_sales = {}
@@ -133,7 +133,7 @@ class GetBusinessReport(APIView):
         for payment in payments:
             if payment.order:
                 try:
-                    # Access items through order relationship
+                    # Access items through order relationship (already prefetched)
                     for item in payment.order.items.all():
                         sku = item.product_sku
                         name = item.product_name
@@ -150,31 +150,42 @@ class GetBusinessReport(APIView):
 
                         product_sales[sku]['quantity'] += quantity
                         product_sales[sku]['revenue'] += int(quantity * price)
-                except Exception:
-                    pass
+                except Exception as e:
+                    continue
 
+        # Sort by revenue and get top 10 products
         sorted_products = sorted(
             product_sales.values(),
             key=lambda x: x['revenue'],
             reverse=True
-        )[:5]
+        )[:10]
 
         return sorted_products
 
     def get_monthly_revenue(self, start_date, end_date, payments):
         monthly_data = {}
 
-        current = start_date
-        while current <= end_date:
-            month_key = current.strftime('%Y-%m')
-            if month_key not in monthly_data:
-                monthly_data[month_key] = {
-                    'month': month_key,
-                    'revenue': 0,
-                    'orders': 0
-                }
-            current += timedelta(days=1)
+        # Initialize all months in the range
+        year = start_date.year
+        month = start_date.month
+        end_year = end_date.year
+        end_month = end_date.month
 
+        while (year < end_year) or (year == end_year and month <= end_month):
+            month_key = f'{year}-{month:02d}'
+            monthly_data[month_key] = {
+                'month': f'{month:02d}/{year}',
+                'revenue': 0,
+                'orders': 0
+            }
+
+            # Move to next month
+            month += 1
+            if month > 12:
+                month = 1
+                year += 1
+
+        # Aggregate payment data
         for payment in payments:
             month_key = payment.created_at.strftime('%Y-%m')
             if month_key in monthly_data:
