@@ -21,7 +21,11 @@ class CreateCustomer(APIView):
             if error_code != 0:
                 return Response({
                     'status': '2',
-                    'error_code': error_code
+                    'response': {
+                        'error_code': str(error_code),
+                        'error_message_us': 'Validation error',
+                        'error_message_vn': 'Dữ liệu không hợp lệ'
+                    }
                 })
 
             customer_code = str(uuid.uuid4())
@@ -46,6 +50,10 @@ class CreateCustomer(APIView):
 
         except Exception as e:
             return Response({
-                "status": "9999",
-                "error_message": f"System error: {str(e)}"
+                "status": "2",
+                "response": {
+                    "error_code": "9999",
+                    "error_message_us": "System error",
+                    "error_message_vn": f"Lỗi hệ thống: {str(e)}"
+                }
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

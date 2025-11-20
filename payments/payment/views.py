@@ -1,5 +1,6 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
+from rest_framework.permissions import IsAuthenticated
 from rest_framework import status
 from django.db import transaction
 from django.utils import timezone
@@ -15,6 +16,7 @@ CHECKSUM_KEY = config("PAYOS_CHECKSUM_KEY")
 
 
 class CreatePaymentView(APIView):
+    permission_classes = [IsAuthenticated]
 
     def post(self, request):
         try:

@@ -30,8 +30,12 @@ class PayDebit(APIView):
                     )
                 except Customer.DoesNotExist:
                     return Response({
-                        "status": "9999",
-                        "error_message": "Khách hàng không tồn tại"
+                        "status": "2",
+                        "response": {
+                            "error_code": "002",
+                            "error_message_us": "Customer not found",
+                            "error_message_vn": "Khách hàng không tồn tại"
+                        }
                     }, status=status.HTTP_404_NOT_FOUND)
 
                 debts = Debt.objects.filter(
@@ -42,8 +46,12 @@ class PayDebit(APIView):
 
                 if not debts.exists():
                     return Response({
-                        "status": "9999",
-                        "error_message": "Khách hàng không có nợ"
+                        "status": "2",
+                        "response": {
+                            "error_code": "003",
+                            "error_message_us": "Customer has no debt",
+                            "error_message_vn": "Khách hàng không có nợ"
+                        }
                     }, status=status.HTTP_404_NOT_FOUND)
 
                 total_remaining_before = debts.aggregate(
@@ -52,8 +60,12 @@ class PayDebit(APIView):
 
                 if payment_amount > total_remaining_before:
                     return Response({
-                        "status": "9999",
-                        "error_message": f"Số tiền trả vượt quá số nợ. Nợ còn lại: {float(total_remaining_before)}"
+                        "status": "2",
+                        "response": {
+                            "error_code": "004",
+                            "error_message_us": "Payment amount exceeds debt",
+                            "error_message_vn": f"Số tiền trả vượt quá số nợ. Nợ còn lại: {float(total_remaining_before)}"
+                        }
                     }, status=status.HTTP_400_BAD_REQUEST)
 
                 remaining_payment = payment_amount
@@ -137,13 +149,21 @@ class PayDebit(APIView):
                 }, status=status.HTTP_200_OK)
             else:
                 return Response({
-                    "status": "9999",
-                    "error_message": "Dữ liệu không hợp lệ",
-                    "errors": serializer.errors
+                    "status": "2",
+                    "response": {
+                        "error_code": "001",
+                        "error_message_us": "Validation error",
+                        "error_message_vn": "Dữ liệu không hợp lệ",
+                        "errors": serializer.errors
+                    }
                 }, status=status.HTTP_400_BAD_REQUEST)
 
         except Exception as e:
             return Response({
-                "status": "9999",
-                "error_message": f"System error: {str(e)}"
+                "status": "2",
+                "response": {
+                    "error_code": "9999",
+                    "error_message_us": "System error",
+                    "error_message_vn": f"Lỗi hệ thống: {str(e)}"
+                }
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

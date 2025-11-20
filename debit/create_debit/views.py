@@ -19,7 +19,12 @@ class CreateDebitView(APIView):
         if not serializer.is_valid():
             return Response({
                 'status': '2',
-                'error_message': serializer.errors
+                'response': {
+                    'error_code': '001',
+                    'error_message_us': 'Validation error',
+                    'error_message_vn': 'Dữ liệu không hợp lệ',
+                    'errors': serializer.errors
+                }
             }, status=status.HTTP_400_BAD_REQUEST)
 
         try:
@@ -38,7 +43,11 @@ class CreateDebitView(APIView):
                 except Customer.DoesNotExist:
                     return Response({
                         'status': '2',
-                        'error_message': 'Không tìm thấy khách hàng'
+                        'response': {
+                            'error_code': '002',
+                            'error_message_us': 'Customer not found',
+                            'error_message_vn': 'Không tìm thấy khách hàng'
+                        }
                     }, status=status.HTTP_404_NOT_FOUND)
 
                 debt_code = f"DEBT_{uuid.uuid4().hex[:16].upper()}"
@@ -75,6 +84,10 @@ class CreateDebitView(APIView):
 
         except Exception as e:
             return Response({
-                'status': '9999',
-                'error_message': f'Lỗi hệ thống: {str(e)}'
+                'status': '2',
+                'response': {
+                    'error_code': '9999',
+                    'error_message_us': 'System error',
+                    'error_message_vn': f'Lỗi hệ thống: {str(e)}'
+                }
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

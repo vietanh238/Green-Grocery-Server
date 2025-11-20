@@ -1,5 +1,6 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
+from rest_framework.permissions import IsAuthenticated
 from rest_framework import status
 from django.db import transaction
 from django.utils import timezone
@@ -12,6 +13,7 @@ from .serializers import CashPaymentSerializer
 
 
 class CashPaymentView(APIView):
+    permission_classes = [IsAuthenticated]
 
     def post(self, request):
         try:
@@ -135,9 +137,11 @@ class CashPaymentView(APIView):
                         "type": "payment_success",
                         "data": {
                             "message_type": "payment_success",
-                            "orderCode": order_code,
+                            "order_code": order_code,
+                            "orderCode": order_code,  # Keep for backward compatibility
                             "amount": float(amount),
-                            "paymentMethod": payment_method,
+                            "payment_method": payment_method,
+                            "paymentMethod": payment_method,  # Keep for backward compatibility
                             "message": f"Thanh toán {payment_method} thành công"
                         }
                     }
@@ -159,10 +163,12 @@ class CashPaymentView(APIView):
                 return Response({
                     'status': '1',
                     'response': {
-                        "orderCode": order_code,
+                        "order_code": order_code,
+                        "orderCode": order_code,  # Keep for backward compatibility
                         "amount": float(amount),
                         "status": "paid",
-                        "paymentMethod": payment_method,
+                        "payment_method": payment_method,
+                        "paymentMethod": payment_method,  # Keep for backward compatibility
                         "message": "Thanh toán thành công"
                     }
                 }, status=status.HTTP_200_OK)

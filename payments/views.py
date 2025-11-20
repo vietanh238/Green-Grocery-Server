@@ -126,8 +126,11 @@ class WebhookView(APIView):
                             "type": "payment_success",
                             "data": {
                                 "message_type": "payment_success",
-                                "orderCode": payment.order_code,
+                                "order_code": payment.order_code,
+                                "orderCode": payment.order_code,  # Keep for backward compatibility
                                 "amount": float(payment.amount),
+                                "payment_method": payment.payment_method,
+                                "paymentMethod": payment.payment_method,  # Keep for backward compatibility
                                 "message": "Thanh toán thành công"
                             }
                         }
