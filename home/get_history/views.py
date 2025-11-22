@@ -11,8 +11,6 @@ from core.models import Order, Payment, OrderItem
 class TransactionHistoryView(APIView):
     """
     API để lấy lịch sử giao dịch (đơn hàng gần đây)
-    """
-    permission_classes = [IsAuthenticated]
     Hỗ trợ filter theo: date, type, status, payment_method
     """
     permission_classes = [IsAuthenticated]
@@ -30,14 +28,16 @@ class TransactionHistoryView(APIView):
 
             # Set default date range (30 days)
             if not date_from:
-                date_from = (datetime.now() - timedelta(days=30)).strftime('%Y-%m-%d')
+                date_from = (datetime.now() - timedelta(days=30)
+                             ).strftime('%Y-%m-%d')
             if not date_to:
                 date_to = datetime.now().strftime('%Y-%m-%d')
 
             transactions = []
 
             # Get sales transactions (Orders)
-            sales_query = self._get_sales_transactions(user, date_from, date_to)
+            sales_query = self._get_sales_transactions(
+                user, date_from, date_to)
             if not transaction_type or transaction_type == 'sale':
                 for order in sales_query:
                     # Map Order status to transaction status
@@ -60,7 +60,8 @@ class TransactionHistoryView(APIView):
                     })
 
             # Get import transactions (PurchaseOrders) - Currently empty
-            imports_query = self._get_import_transactions(user, date_from, date_to)
+            imports_query = self._get_import_transactions(
+                user, date_from, date_to)
             if not transaction_type or transaction_type == 'import':
                 for import_record in imports_query:
                     supplier_name = 'Nhà cung cấp'
@@ -80,7 +81,8 @@ class TransactionHistoryView(APIView):
                     })
 
             # Get payment transactions (Payments)
-            payment_query = self._get_payment_transactions(user, date_from, date_to)
+            payment_query = self._get_payment_transactions(
+                user, date_from, date_to)
             if not transaction_type or transaction_type == 'payment':
                 for payment in payment_query:
                     # Get customer name from related order
@@ -102,10 +104,12 @@ class TransactionHistoryView(APIView):
 
             # Apply filters
             if transaction_status:
-                transactions = [t for t in transactions if t['status'] == transaction_status]
+                transactions = [
+                    t for t in transactions if t['status'] == transaction_status]
 
             if payment_method_filter:
-                transactions = [t for t in transactions if t['payment_method'] == payment_method_filter]
+                transactions = [
+                    t for t in transactions if t['payment_method'] == payment_method_filter]
 
             # Sort by created_at (newest first)
             transactions.sort(key=lambda x: x['created_at'], reverse=True)

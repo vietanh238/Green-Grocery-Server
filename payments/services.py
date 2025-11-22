@@ -10,6 +10,10 @@ API_KEY = config("PAYOS_API_KEY")
 CHECKSUM_KEY = config("PAYOS_CHECKSUM_KEY")
 
 def create_payment_request(order_code, amount, description, return_url, cancel_url, buyer=None):
+    """
+    Create payment request with PayOS
+    Returns PayOS response with data containing: paymentLinkId, checkoutUrl, qrCode
+    """
     url = f"{PAYOS_BASE_URL}{PAYOS_CREATE_PATH}"
     headers = {
         "x-client-id": CLIENT_ID,
@@ -34,9 +38,22 @@ def create_payment_request(order_code, amount, description, return_url, cancel_u
             "buyerPhone": buyer.get("phone")
         })
 
-    resp = requests.post(url, json=body, headers=headers, timeout=15)
-    resp.raise_for_status()
-    return resp.json()
+    print(f"🔵 PayOS Request URL: {url}")
+    print(f"🔵 PayOS Request Body: {body}")
+
+    try:
+        resp = requests.post(url, json=body, headers=headers, timeout=15)
+        resp.raise_for_status()
+        response_data = resp.json()
+        print(f"✅ PayOS Response: {response_data}")
+        return response_data
+    except requests.exceptions.HTTPError as e:
+        print(f"❌ PayOS HTTP Error: {e}")
+        print(f"❌ Response Content: {e.response.text if hasattr(e, 'response') else 'No response'}")
+        raise
+    except Exception as e:
+        print(f"❌ PayOS Request Error: {str(e)}")
+        raise
 
 def delete_payment(order_code):
     if not order_code or not isinstance(order_code, str):

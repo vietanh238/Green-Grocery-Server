@@ -34,7 +34,8 @@ class CreatePaymentView(APIView):
                 }, status=status.HTTP_400_BAD_REQUEST)
 
             data = serializer.validated_data
-            order_code = str(data['orderCode'])
+            order_code_int = int(data['orderCode'])  # PayOS requires integer
+            order_code = str(order_code_int)  # For database storage
             amount = data['amount']
             description = data.get(
                 'description', f'Thanh toán đơn hàng {order_code}')
@@ -113,12 +114,7 @@ class CreatePaymentView(APIView):
 
                 OrderItem.objects.bulk_create(order_items)
 
-                # Try to create payment with PayOS
-                payos_data = {}
-                transaction_id = None
-                checkout_url = None
-                qr_code = None
-
+                # Create payment with PayOS - NO FALLBACK
                 try:
                     payos_buyer = None
                     if buyer_name or buyer_phone:
@@ -129,7 +125,7 @@ class CreatePaymentView(APIView):
                         }
 
                     payos_res = create_payment_request(
-                        order_code=order_code,
+                        order_code=order_code_int,  # ✅ Send as integer for PayOS
                         amount=int(amount),
                         description=description,
                         return_url=return_url,
@@ -137,25 +133,50 @@ class CreatePaymentView(APIView):
                         buyer=payos_buyer
                     )
 
-                    print(f"PayOS Response: {payos_res}")  # Debug log
+                    print(f"✅ PayOS Response: {payos_res}")
+
+                    if not payos_res or 'data' not in payos_res:
+                        # Delete order if PayOS fails
+                        order.delete()
+                        return Response({
+                            'status': '2',
+                            'response': {
+                                'error_code': '003',
+                                'error_message_us': 'PayOS returned invalid response',
+                                'error_message_vn': 'PayOS trả về dữ liệu không hợp lệ'
+                            }
+                        }, status=status.HTTP_502_BAD_GATEWAY)
 
                     payos_data = payos_res.get("data", {})
                     transaction_id = payos_data.get("paymentLinkId")
                     checkout_url = payos_data.get("checkoutUrl")
                     qr_code = payos_data.get("qrCode")
 
-                except Exception as e:
-                    print(f"PayOS Error: {str(e)}")  # Debug log
-                    # Don't fail, continue with VietQR fallback
+                    # ✅ Check if QR code exists
+                    if not qr_code or not checkout_url:
+                        # Delete order if PayOS doesn't return QR code
+                        order.delete()
+                        return Response({
+                            'status': '2',
+                            'response': {
+                                'error_code': '004',
+                                'error_message_us': 'PayOS did not return QR code',
+                                'error_message_vn': 'Không thể tạo mã QR thanh toán. Vui lòng thử lại sau.'
+                            }
+                        }, status=status.HTTP_502_BAD_GATEWAY)
 
-                # Fallback: Generate VietQR if PayOS doesn't return QR code
-                if not qr_code:
-                    # Generate VietQR URL
-                    bank_id = "970436"  # Vietcombank
-                    account_no = "1019466120"
-                    account_name = "DUONG VIET ANH"
-                    qr_code = f"https://img.vietqr.io/image/{bank_id}-{account_no}-compact2.jpg?amount={int(amount)}&addInfo={description}&accountName={account_name}"
-                    print(f"Using VietQR fallback: {qr_code}")  # Debug log
+                except Exception as e:
+                    print(f"❌ PayOS Error: {str(e)}")
+                    # Delete order if PayOS fails
+                    order.delete()
+                    return Response({
+                        'status': '2',
+                        'response': {
+                            'error_code': '005',
+                            'error_message_us': f'PayOS connection failed: {str(e)}',
+                            'error_message_vn': f'Không thể kết nối với PayOS: {str(e)}'
+                        }
+                    }, status=status.HTTP_502_BAD_GATEWAY)
 
                 payment = Payment.objects.create(
                     order=order,
