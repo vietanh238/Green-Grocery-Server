@@ -296,25 +296,50 @@ class DemandForecastAI:
         return predictions
 
     def calculate_reorder_recommendation(self, product_id, current_stock, predictions, lead_time_days=7):
-        if not predictions:
+        if not predictions or len(predictions) == 0:
             return None
 
-        demand_7_days = sum(p['predicted_quantity'] for p in predictions[:7])
-        demand_14_days = sum(p['predicted_quantity'] for p in predictions[:14])
-        demand_30_days = sum(p['predicted_quantity'] for p in predictions[:30])
+        # Safely get demand with fallback to available predictions
+        predictions_count = len(predictions)
 
-        daily_avg = demand_7_days / 7
+        # Calculate demands with safe slicing
+        demand_7_days = sum(p['predicted_quantity'] for p in predictions[:min(7, predictions_count)])
+        demand_14_days = sum(p['predicted_quantity'] for p in predictions[:min(14, predictions_count)])
+        demand_30_days = sum(p['predicted_quantity'] for p in predictions[:min(30, predictions_count)])
 
+        # Calculate daily average (avoid division by zero)
+        days_for_avg = min(7, predictions_count)
+        daily_avg = demand_7_days / days_for_avg if days_for_avg > 0 else 0
+
+        # Safety stock and reorder point
         safety_stock = daily_avg * 3
         reorder_point = (daily_avg * lead_time_days) + safety_stock
 
-        optimal_order_quantity = demand_30_days
+        # If we have enough predictions, use 30-day demand, otherwise use what we have
+        if predictions_count >= 30:
+            optimal_order_quantity = demand_30_days
+        elif predictions_count >= 14:
+            # Scale up 14-day demand to 30 days
+            optimal_order_quantity = (demand_14_days / 14) * 30
+        else:
+            # Scale up available data to 30 days
+            optimal_order_quantity = (demand_7_days / days_for_avg) * 30 if days_for_avg > 0 else daily_avg * 30
 
-        days_until_stockout = int(
-            current_stock / daily_avg) if daily_avg > 0 else 999
+        # Calculate days until stockout
+        days_until_stockout = int(current_stock / daily_avg) if daily_avg > 0 else 999
 
+        # Reorder logic
         should_reorder = current_stock <= reorder_point
-        urgency = 'high' if days_until_stockout <= 3 else 'medium' if days_until_stockout <= 7 else 'low'
+
+        # Urgency levels
+        if days_until_stockout <= 0:
+            urgency = 'critical'
+        elif days_until_stockout <= 3:
+            urgency = 'high'
+        elif days_until_stockout <= 7:
+            urgency = 'medium'
+        else:
+            urgency = 'low'
 
         return {
             'product_id': product_id,
@@ -332,15 +357,18 @@ class DemandForecastAI:
             'recommendation': self._generate_recommendation_text(
                 should_reorder,
                 days_until_stockout,
-                optimal_order_quantity
+                optimal_order_quantity,
+                urgency
             )
         }
 
-    def _generate_recommendation_text(self, should_reorder, days_until_stockout, order_qty):
+    def _generate_recommendation_text(self, should_reorder, days_until_stockout, order_qty, urgency='low'):
         if should_reorder:
-            if days_until_stockout <= 3:
-                return f'CẤP BÁT! Dự kiến hết hàng trong {days_until_stockout} ngày. Nên nhập ngay {int(order_qty)} sản phẩm.'
-            elif days_until_stockout <= 7:
+            if urgency == 'critical':
+                return f'KHẨN CẤP! Đã hết hàng hoặc sắp hết. Nhập ngay {int(order_qty)} sản phẩm.'
+            elif days_until_stockout <= 3 or urgency == 'high':
+                return f'CẤP BÁC! Dự kiến hết hàng trong {days_until_stockout} ngày. Nên nhập ngay {int(order_qty)} sản phẩm.'
+            elif days_until_stockout <= 7 or urgency == 'medium':
                 return f'Cần nhập hàng sớm. Còn khoảng {days_until_stockout} ngày trước khi hết hàng. Đề xuất nhập {int(order_qty)} sản phẩm.'
             else:
                 return f'Nên chuẩn bị nhập hàng. Đề xuất nhập {int(order_qty)} sản phẩm cho 30 ngày tới.'
