@@ -106,7 +106,7 @@ class UpdateProductView(APIView):
                 new_quantity = data['quantity']
                 if new_quantity != old_quantity:
                     quantity_diff = new_quantity - old_quantity
-                    InventoryService.create_transaction(
+                    adjustment_result = InventoryService.create_transaction(
                         product=product,
                         transaction_type='adjustment',
                         quantity=quantity_diff,
@@ -116,9 +116,16 @@ class UpdateProductView(APIView):
                         note=f'Điều chỉnh tồn kho từ {old_quantity} thành {new_quantity}',
                         user=user
                     )
+                    # Get updated product from adjustment result
+                    if adjustment_result and 'product' in adjustment_result:
+                        product = adjustment_result['product']
+
                     if new_quantity > old_quantity:
                         product.last_restock_date = timezone.now()
                         product.save()
+                else:
+                    # Refresh product from DB to ensure we have latest data
+                    product.refresh_from_db()
 
             product_data = ProductListSerializer(product).data
 
