@@ -74,14 +74,15 @@ class CreatePaymentView(APIView):
                 order_items = []
                 for item_data in items_data:
                     try:
-                        product = Product.objects.get(
+                        # Use select_for_update to prevent race condition
+                        product = Product.objects.select_for_update().get(
                             bar_code=item_data['bar_code'],
                             is_active=True
                         )
 
                         if product.stock_quantity < item_data['quantity']:
                             raise ValueError(
-                                f"Sản phẩm {product.name} không đủ số lượng trong kho")
+                                f"Sản phẩm {product.name} không đủ số lượng trong kho. Chỉ còn {product.stock_quantity} sản phẩm (yêu cầu: {item_data['quantity']})")
 
                         order_item = OrderItem(
                             order=order,
