@@ -39,3 +39,31 @@ class SupplierCreateSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(
                 "Số điện thoại không được để trống")
         return value.strip()
+
+
+class SupplierUpdateSerializer(serializers.ModelSerializer):
+    """
+    Serializer dùng cho cập nhật thông tin nhà cung cấp.
+    Cho phép cập nhật tất cả các trường business nhưng không cho sửa mã NCC.
+    """
+    supplier_code = serializers.CharField(read_only=True)
+
+    class Meta:
+        model = Supplier
+        fields = [
+            'supplier_code', 'name', 'contact_person', 'phone',
+            'email', 'address', 'tax_code', 'bank_account', 'bank_name',
+            'payment_terms', 'credit_limit', 'note'
+        ]
+
+    def validate_name(self, value):
+        if not value.strip():
+            raise serializers.ValidationError(
+                "Tên nhà cung cấp không được để trống")
+        return value.strip()
+
+    def validate_phone(self, value):
+        if not value.strip():
+            raise serializers.ValidationError(
+                "Số điện thoại không được để trống")
+        return value.strip()

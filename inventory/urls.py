@@ -28,3 +28,4 @@ urlpatterns = [
     path('summary/', InventorySummaryView.as_view(), name='inventory-summary'),
 ]
 
+

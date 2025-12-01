@@ -6,7 +6,7 @@ from .create_new_product.views import CreateProductView
 from .update_product.views import UpdateProductView
 from .delete_product.views import DeleteProductView
 from .bulk_create.views import BulkCreateProductsView
-from .get_supplier.views import GetSuppliersView, CreateSupplierView
+from .get_supplier.views import GetSuppliersView, CreateSupplierView, UpdateSupplierView, DeleteSupplierView
 
 urlpatterns = [
     path('products/', GetProductView.as_view(), name='get-products'),
@@ -19,4 +19,6 @@ urlpatterns = [
          name='bulk-create-products'),
     path('suppliers/', GetSuppliersView.as_view(), name='get-suppliers'),
     path('supplier/create/', CreateSupplierView.as_view(), name='create-supplier'),
+    path('supplier/update/', UpdateSupplierView.as_view(), name='update-supplier'),
+    path('supplier/delete/<str:supplier_code>/', DeleteSupplierView.as_view(), name='delete-supplier'),
 ]
