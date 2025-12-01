@@ -24,15 +24,27 @@ class DeleteCustomer(APIView):
                     )
                 except Customer.DoesNotExist:
                     return Response({
-                        "status": "9999",
-                        "error_message": "Khách hàng không tồn tại"
+                        "status": "2",
+                        "response": {
+                            "error_code": "002",
+                            "error_message_us": "Customer not found",
+                            "error_message_vn": "Khách hàng không tồn tại"
+                        }
                     }, status=status.HTTP_404_NOT_FOUND)
-                if customer.total_debt != 0:
+
+                if customer.total_debt > 0:
                     return Response({
                         'status': '2',
-                        'error_code': 1
-                    })
-                customer.delete()
+                        'response': {
+                            'error_code': '001',
+                            'error_message_us': 'Cannot delete customer with outstanding debt',
+                            'error_message_vn': f'Không thể xóa khách hàng vẫn còn nợ. Số nợ hiện tại: {float(customer.total_debt):,.0f} VND'
+                        }
+                    }, status=status.HTTP_400_BAD_REQUEST)
+
+                customer.is_active = False
+                customer.save()
+
                 return Response({
                     "status": "1",
                     "response": {
@@ -43,13 +55,23 @@ class DeleteCustomer(APIView):
                 }, status=status.HTTP_200_OK)
             else:
                 return Response({
-                    "status": "9999",
-                    "error_message": "Dữ liệu không hợp lệ",
-                    "errors": serializer.errors
+                    "status": "2",
+                    "response": {
+                        "error_code": "001",
+                        "error_message_us": "Validation error",
+                        "error_message_vn": "Dữ liệu không hợp lệ",
+                        "errors": serializer.errors
+                    }
                 }, status=status.HTTP_400_BAD_REQUEST)
 
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             return Response({
-                "status": "9999",
-                "error_message": f"System error: {str(e)}"
+                "status": "2",
+                "response": {
+                    "error_code": "9999",
+                    "error_message_us": "System error",
+                    "error_message_vn": f"Lỗi hệ thống: {str(e)}"
+                }
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

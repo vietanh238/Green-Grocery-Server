@@ -69,12 +69,10 @@ class BulkCreateProductsView(APIView):
                         existing_product = existing_products_by_sku[sku]
 
                     if existing_product:
-                        # Update product info
                         existing_product.price = product_data['price']
                         existing_product.cost_price = product_data['costPrice']
                         existing_product.updated_by = user
 
-                        # Use InventoryService to add stock if quantity > 0
                         if product_data['quantity'] > 0:
                             try:
                                 InventoryService.import_stock(
@@ -88,7 +86,6 @@ class BulkCreateProductsView(APIView):
                                 )
                                 existing_product.last_restock_date = timezone.now()
                             except Exception as inv_error:
-                                # If inventory service fails, still update product info but log error
                                 errors.append({
                                     'row': index + 1,
                                     'product': product_data.get('name', 'Unknown'),
@@ -126,7 +123,6 @@ class BulkCreateProductsView(APIView):
                             else:
                                 supplier = supplier_cache[supplier_name]
 
-                        # Create product with initial stock = 0, will add via InventoryService after creation
                         products_to_create.append(Product(
                             name=product_data['name'],
                             sku=sku,
@@ -136,13 +132,13 @@ class BulkCreateProductsView(APIView):
                             unit=product_data['unit'],
                             cost_price=product_data['costPrice'],
                             price=product_data['price'],
-                            stock_quantity=0,  # Start with 0, will add via InventoryService
+                            stock_quantity=0,
                             reorder_point=product_data.get('reorderPoint', 10),
                             max_stock_level=product_data.get(
                                 'maxStockLevel', 1000),
                             has_expiry=product_data.get('hasExpiry', False),
                             shelf_life_days=product_data.get('shelfLifeDays'),
-                            last_restock_date=None,  # Will set after inventory import
+                            last_restock_date=None,
                             created_by=user,
                             updated_by=user
                         ))
@@ -157,14 +153,11 @@ class BulkCreateProductsView(APIView):
                     })
 
             with transaction.atomic():
-                # Create new products
                 if products_to_create:
                     Product.objects.bulk_create(
                         products_to_create, batch_size=500)
                     success_count = len(products_to_create)
 
-                    # After creation, add initial stock via InventoryService for new products
-                    # Get barcodes of newly created products
                     new_product_barcodes = [p.bar_code for p in products_to_create]
                     new_products_map = {
                         p.bar_code: p for p in Product.objects.filter(
@@ -173,10 +166,8 @@ class BulkCreateProductsView(APIView):
                         )
                     }
 
-                    # Process inventory for new products
                     for idx, product_data in enumerate(products_data):
                         barcode = product_data['barCode']
-                        # Only process if this is a new product (not in update list)
                         if barcode in new_products_map and product_data['quantity'] > 0:
                             try:
                                 created_product = new_products_map[barcode]
@@ -199,7 +190,6 @@ class BulkCreateProductsView(APIView):
                                     'message': f'Lỗi nhập kho: {str(inv_error)}'
                                 })
 
-                # Update existing products
                 if products_to_update:
                     for product in products_to_update:
                         product.save()

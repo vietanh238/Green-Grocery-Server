@@ -1,6 +1,7 @@
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework import status
 from core.models import Customer, Debt
 from django.db.models import Subquery, OuterRef, Case, When, Value, CharField, Prefetch
 from django.utils.timezone import now
@@ -80,6 +81,8 @@ class GetCustomerView(APIView):
             })
 
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             return Response({
                 "status": "2",
                 "response": {
@@ -87,4 +90,4 @@ class GetCustomerView(APIView):
                     "error_message_us": "System error",
                     "error_message_vn": f"Lỗi hệ thống: {str(e)}"
                 }
-            })
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

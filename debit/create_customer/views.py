@@ -1,12 +1,8 @@
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated
-from core.models import Customer
-from rest_framework.response import Response
-from rest_framework.views import APIView
-from rest_framework.permissions import IsAuthenticated
 from rest_framework import status
-from django.db.models import Sum, Max, F, ExpressionWrapper, DecimalField, When, Case, Value, CharField, Q, BooleanField
+from core.models import Customer
 from django.utils.timezone import now
 import uuid
 from .serializer import CustomerSerializer
@@ -19,14 +15,19 @@ class CreateCustomer(APIView):
             serializer = CustomerSerializer()
             error_code = serializer.validate(data=request.data)
             if error_code != 0:
+                error_messages = {
+                    '1': 'Tên khách hàng không được để trống',
+                    '2': 'Số điện thoại đã được đăng ký trong hệ thống',
+                    '3': 'Số điện thoại không được để trống',
+                }
                 return Response({
                     'status': '2',
                     'response': {
                         'error_code': str(error_code),
                         'error_message_us': 'Validation error',
-                        'error_message_vn': 'Dữ liệu không hợp lệ'
+                        'error_message_vn': error_messages.get(str(error_code), 'Dữ liệu không hợp lệ')
                     }
-                })
+                }, status=status.HTTP_400_BAD_REQUEST)
 
             customer_code = str(uuid.uuid4())
             customer = Customer.objects.create(

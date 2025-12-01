@@ -3,6 +3,7 @@ from django.utils.timezone import now
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
 from rest_framework.response import Response
+from rest_framework import status
 from core.models import Debt, Customer
 from django.db import models
 from datetime import timedelta
@@ -37,12 +38,17 @@ class GetDebtViews(APIView):
             )
             last_month_total = last_month_qs["total"] or 0
 
-            change_percent = 0
+            change_percent = 0.0
             if last_month_total > 0:
-                change_percent = (
-                    (total_debt - last_month_total) / last_month_total) * 100
+                try:
+                    change_percent = ((total_debt - last_month_total) / last_month_total) * 100
+                    change_percent = round(change_percent, 2)
+                except (ZeroDivisionError, TypeError, ValueError):
+                    change_percent = 0.0
             elif total_debt > 0 and last_month_total == 0:
-                change_percent = 100
+                change_percent = 100.0
+            elif total_debt == 0 and last_month_total > 0:
+                change_percent = -100.0
 
             customer_count = Debt.objects.filter(
                 debt_amount__gt=F("paid_amount"),
@@ -88,7 +94,13 @@ class GetDebtViews(APIView):
             })
 
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             return Response({
-                "status": "9999",
-                "error_message": str(e) or "System error"
-            })
+                "status": "2",
+                "response": {
+                    "error_code": "9999",
+                    "error_message_us": "System error",
+                    "error_message_vn": f"Lỗi hệ thống: {str(e)}"
+                }
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

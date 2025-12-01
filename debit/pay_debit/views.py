@@ -3,6 +3,7 @@ from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated
 from rest_framework import status
 from django.utils.timezone import now
+from django.db import transaction
 from core.models import Customer, Debt, DebtPayment
 from decimal import Decimal
 import uuid
@@ -64,14 +65,45 @@ class PayDebit(APIView):
                         "response": {
                             "error_code": "004",
                             "error_message_us": "Payment amount exceeds debt",
-                            "error_message_vn": f"Số tiền trả vượt quá số nợ. Nợ còn lại: {float(total_remaining_before)}"
+                            "error_message_vn": f"Số tiền trả vượt quá số nợ. Nợ còn lại: {float(total_remaining_before):,.0f} VND"
                         }
                     }, status=status.HTTP_400_BAD_REQUEST)
 
-                remaining_payment = payment_amount
-                processed_debts = []
+                if payment_amount <= 0:
+                    return Response({
+                        "status": "2",
+                        "response": {
+                            "error_code": "005",
+                            "error_message_us": "Payment amount must be greater than 0",
+                            "error_message_vn": "Số tiền thanh toán phải lớn hơn 0"
+                        }
+                    }, status=status.HTTP_400_BAD_REQUEST)
 
-                for debt in debts:
+                with transaction.atomic():
+                    debts = Debt.objects.select_for_update().filter(
+                        customer=customer,
+                        debt_amount__gt=F("paid_amount"),
+                        is_active=True
+                    ).order_by('due_date')
+
+                    total_remaining_before = debts.aggregate(
+                        total=Sum("debt_amount") - Sum("paid_amount")
+                    )["total"] or 0
+
+                    if payment_amount > total_remaining_before:
+                        return Response({
+                            "status": "2",
+                            "response": {
+                                "error_code": "004",
+                                "error_message_us": "Payment amount exceeds debt",
+                                "error_message_vn": f"Số tiền trả vượt quá số nợ. Nợ còn lại: {float(total_remaining_before):,.0f} VND"
+                            }
+                        }, status=status.HTTP_400_BAD_REQUEST)
+
+                    remaining_payment = payment_amount
+                    processed_debts = []
+
+                    for debt in debts:
                     if remaining_payment <= 0:
                         break
 
@@ -108,27 +140,27 @@ class PayDebit(APIView):
                         'remaining_after': float(debt.debt_amount - debt.paid_amount)
                     })
 
-                    remaining_payment -= payment_for_this_debt
+                        remaining_payment -= payment_for_this_debt
 
-                total_remaining_after = debts.aggregate(
-                    total=Sum("debt_amount") - Sum("paid_amount")
-                )["total"] or 0
+                    total_remaining_after = debts.aggregate(
+                        total=Sum("debt_amount") - Sum("paid_amount")
+                    )["total"] or 0
 
-                if total_remaining_after == 0:
-                    debt_status = "paid_debt"
-                    status_message = "Đã trả hết nợ"
-                else:
-                    has_overdue = Debt.objects.filter(
-                        customer=customer,
-                        due_date__lt=now().date(),
-                        debt_amount__gt=F("paid_amount"),
-                        is_active=True
-                    ).exists()
-                    debt_status = "overdue" if has_overdue else "in_debt"
-                    status_message = "Nợ quá hạn" if has_overdue else "Còn nợ"
+                    if total_remaining_after == 0:
+                        debt_status = "paid_debt"
+                        status_message = "Đã trả hết nợ"
+                    else:
+                        has_overdue = Debt.objects.filter(
+                            customer=customer,
+                            due_date__lt=now().date(),
+                            debt_amount__gt=F("paid_amount"),
+                            is_active=True
+                        ).exists()
+                        debt_status = "overdue" if has_overdue else "in_debt"
+                        status_message = "Nợ quá hạn" if has_overdue else "Còn nợ"
 
-                customer.total_debt = total_remaining_after
-                customer.save()
+                    customer.total_debt = total_remaining_after
+                    customer.save()
 
                 response_data = {
                     "customer_code": customer.customer_code,

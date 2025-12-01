@@ -52,14 +52,34 @@ class GetDashboardView(APIView):
             today_customers = current_payments.filter(
                 order__buyer_phone__isnull=False
             ).values('order__buyer_phone').distinct().count()
-            new_customers = current_payments.filter(
+
+            from core.models import Order
+            from django.db.models import Min
+
+            existing_customer_phones = set(
+                Order.objects.filter(
+                    buyer_phone__isnull=False,
+                    created_at__lt=start_date
+                ).values_list('buyer_phone', flat=True).distinct()
+            )
+
+            current_customer_phones = set(
+                current_payments.filter(
+                    order__buyer_phone__isnull=False
+                ).values_list('order__buyer_phone', flat=True).distinct()
+            )
+
+            new_customer_phones = current_customer_phones - existing_customer_phones
+            new_customers = len(new_customer_phones)
+
+            prev_customers = previous_payments.filter(
                 order__buyer_phone__isnull=False
             ).values('order__buyer_phone').distinct().count()
 
             revenue_growth = self.calculate_growth(prev_revenue, today_revenue)
             order_growth = self.calculate_growth(prev_orders, today_orders)
             profit_growth = self.calculate_growth(prev_profit, today_profit)
-            customer_growth = 0
+            customer_growth = self.calculate_growth(prev_customers, today_customers)
 
             profit_margin = self.calculate_profit_margin(
                 today_revenue, today_profit)
@@ -68,12 +88,10 @@ class GetDashboardView(APIView):
             top_products = self.get_top_products(current_payments)
             hourly_revenue = self.get_hourly_revenue(current_payments, period)
 
-            # Get inventory alerts
             inventory_stats = self.get_inventory_stats()
             low_stock_products = self.get_low_stock_products()
 
-            # ✅ Enhanced metrics for WinMart/CircleK standard
-            avg_order_value = float(today_revenue / today_orders) if today_orders > 0 else 0
+            avg_order_value = float(today_revenue / today_orders) if today_orders > 0 else 0.0
             payment_methods_breakdown = self.get_payment_methods_breakdown(current_payments)
             category_revenue = self.get_category_revenue(current_payments)
             inventory_valuation = self.get_inventory_valuation()
@@ -82,7 +100,6 @@ class GetDashboardView(APIView):
             return Response({
                 "status": "1",
                 "response": {
-                    # Core metrics
                     "today_revenue": int(today_revenue),
                     "today_orders": today_orders,
                     "today_profit": today_profit,
@@ -90,27 +107,19 @@ class GetDashboardView(APIView):
                     "new_customers": new_customers,
                     "profit_margin": float(profit_margin),
                     "avg_order_value": float(avg_order_value),
-
-                    # Growth metrics
                     "revenue_growth": float(revenue_growth),
                     "order_growth": float(order_growth),
                     "profit_growth": float(profit_growth),
                     "customer_growth": float(customer_growth),
                     "revenue_comparison": int(today_revenue) - int(prev_revenue),
                     "order_comparison": today_orders - prev_orders,
-
-                    # Sales data
                     "recent_sales": recent_sales,
                     "top_products": top_products,
                     "hourly_revenue": hourly_revenue,
                     "peak_hour": peak_hour,
-
-                    # Inventory
                     "inventory_stats": inventory_stats,
                     "inventory_valuation": inventory_valuation,
                     "low_stock_products": low_stock_products,
-
-                    # Analytics
                     "payment_methods": payment_methods_breakdown,
                     "category_revenue": category_revenue,
                 }
@@ -175,7 +184,6 @@ class GetDashboardView(APIView):
         for payment in payments:
             if payment.order:
                 try:
-                    # Access items through order relationship
                     for item in payment.order.items.all():
                         profit = float(item.profit) if item.profit else 0
                         total_profit += profit
@@ -185,13 +193,21 @@ class GetDashboardView(APIView):
 
     def calculate_growth(self, previous, current):
         if previous == 0:
-            return 100 if current > 0 else 0
-        return ((current - previous) / previous) * 100
+            return 100.0 if current > 0 else 0.0
+        try:
+            growth = ((current - previous) / previous) * 100
+            return round(growth, 2) if abs(growth) != float('inf') else 0.0
+        except (ZeroDivisionError, TypeError, ValueError):
+            return 0.0
 
     def calculate_profit_margin(self, revenue, profit):
-        if revenue == 0:
-            return 0
-        return (profit / revenue) * 100
+        if revenue == 0 or revenue is None:
+            return 0.0
+        try:
+            margin = (profit / revenue) * 100
+            return round(margin, 2) if abs(margin) != float('inf') else 0.0
+        except (ZeroDivisionError, TypeError, ValueError):
+            return 0.0
 
     def get_recent_sales(self, payments):
         sales = payments.order_by('-created_at')[:10]
@@ -212,7 +228,6 @@ class GetDashboardView(APIView):
         for payment in payments:
             if payment.order:
                 try:
-                    # Access items through order relationship
                     for item in payment.order.items.all():
                         sku = item.product_sku
                         name = item.product_name
@@ -305,7 +320,6 @@ class GetDashboardView(APIView):
         return revenue_data
 
     def get_inventory_stats(self):
-        """Get inventory statistics"""
         try:
             all_products = Product.objects.filter(is_active=True)
 
@@ -345,9 +359,7 @@ class GetDashboardView(APIView):
             }
 
     def get_low_stock_products(self):
-        """Get list of products with low stock or out of stock"""
         try:
-            # Get products that are out of stock or low stock
             products = Product.objects.filter(
                 Q(stock_quantity=0) |
                 Q(stock_quantity__gt=0, stock_quantity__lte=F('reorder_point')),
@@ -373,7 +385,6 @@ class GetDashboardView(APIView):
             return []
 
     def get_payment_methods_breakdown(self, payments):
-        """Get revenue breakdown by payment methods"""
         try:
             cash_count = 0
             qr_count = 0
@@ -407,7 +418,6 @@ class GetDashboardView(APIView):
             return {'cash': {'count': 0, 'total': 0, 'percentage': 0}, 'qr': {'count': 0, 'total': 0, 'percentage': 0}}
 
     def get_category_revenue(self, payments):
-        """Get revenue breakdown by product categories"""
         try:
             category_data = {}
 
@@ -429,14 +439,12 @@ class GetDashboardView(APIView):
                             category_data[category_name]['quantity'] += item.quantity
                             category_data[category_name]['items_count'] += 1
 
-            # Sort by revenue and get top 10
             sorted_categories = sorted(
                 [{'name': name, **data} for name, data in category_data.items()],
                 key=lambda x: x['revenue'],
                 reverse=True
             )[:10]
 
-            # Calculate percentages
             total_revenue = sum(cat['revenue'] for cat in sorted_categories)
             for cat in sorted_categories:
                 cat['revenue'] = int(cat['revenue'])
@@ -447,7 +455,6 @@ class GetDashboardView(APIView):
             return []
 
     def get_inventory_valuation(self):
-        """Get detailed inventory valuation"""
         try:
             all_products = Product.objects.filter(is_active=True)
 
@@ -476,7 +483,6 @@ class GetDashboardView(APIView):
             }
 
     def get_peak_hour(self, payments):
-        """Get the peak sales hour"""
         try:
             hourly_revenue = {}
             hourly_orders = {}

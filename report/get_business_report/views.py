@@ -7,6 +7,7 @@ from django.utils.timezone import now
 from datetime import timedelta, datetime
 import calendar
 import json
+import traceback
 from core.models import Product, Category
 from core.models import Payment
 
@@ -20,8 +21,50 @@ class GetBusinessReport(APIView):
             date_to = request.query_params.get('date_to')
 
             if period == 'custom' and date_from and date_to:
-                start_date = datetime.strptime(date_from, '%Y-%m-%d').date()
-                end_date = datetime.strptime(date_to, '%Y-%m-%d').date()
+                try:
+                    start_date = datetime.strptime(date_from, '%Y-%m-%d').date()
+                    end_date = datetime.strptime(date_to, '%Y-%m-%d').date()
+
+                    if start_date > end_date:
+                        return Response({
+                            "status": "2",
+                            "response": {
+                                "error_code": "001",
+                                "error_message_us": "Invalid date range",
+                                "error_message_vn": "Ngày bắt đầu phải nhỏ hơn hoặc bằng ngày kết thúc"
+                            }
+                        }, status=status.HTTP_400_BAD_REQUEST)
+
+                    days_diff = (end_date - start_date).days
+                    if days_diff > 730:
+                        return Response({
+                            "status": "2",
+                            "response": {
+                                "error_code": "002",
+                                "error_message_us": "Date range too large",
+                                "error_message_vn": "Khoảng thời gian không được vượt quá 730 ngày (2 năm)"
+                            }
+                        }, status=status.HTTP_400_BAD_REQUEST)
+
+                    today = now().date()
+                    if end_date > today:
+                        return Response({
+                            "status": "2",
+                            "response": {
+                                "error_code": "003",
+                                "error_message_us": "End date cannot be in the future",
+                                "error_message_vn": "Ngày kết thúc không được là ngày trong tương lai"
+                            }
+                        }, status=status.HTTP_400_BAD_REQUEST)
+                except ValueError:
+                    return Response({
+                        "status": "2",
+                        "response": {
+                            "error_code": "004",
+                            "error_message_us": "Invalid date format",
+                            "error_message_vn": "Định dạng ngày không hợp lệ. Vui lòng sử dụng định dạng YYYY-MM-DD"
+                        }
+                    }, status=status.HTTP_400_BAD_REQUEST)
             else:
                 start_date = self.get_start_date(period)
                 end_date = now().date()
@@ -95,6 +138,7 @@ class GetBusinessReport(APIView):
             }, status=status.HTTP_200_OK)
 
         except Exception as e:
+            traceback.print_exc()
             return Response({
                 "status": "2",
                 "response": {
@@ -118,12 +162,11 @@ class GetBusinessReport(APIView):
         for payment in payments:
             if payment.order:
                 try:
-                    # Access items through order relationship (already prefetched)
                     for item in payment.order.items.all():
                         cost_price = float(item.cost_price) if item.cost_price else 0
                         quantity = int(item.quantity)
                         total_cost += cost_price * quantity
-                except Exception as e:
+                except Exception:
                     continue
         return int(total_cost)
 
@@ -133,7 +176,6 @@ class GetBusinessReport(APIView):
         for payment in payments:
             if payment.order:
                 try:
-                    # Access items through order relationship (already prefetched)
                     for item in payment.order.items.all():
                         sku = item.product_sku
                         name = item.product_name
@@ -150,10 +192,9 @@ class GetBusinessReport(APIView):
 
                         product_sales[sku]['quantity'] += quantity
                         product_sales[sku]['revenue'] += int(quantity * price)
-                except Exception as e:
+                except Exception:
                     continue
 
-        # Sort by revenue and get top 10 products
         sorted_products = sorted(
             product_sales.values(),
             key=lambda x: x['revenue'],
@@ -165,7 +206,6 @@ class GetBusinessReport(APIView):
     def get_monthly_revenue(self, start_date, end_date, payments):
         monthly_data = {}
 
-        # Initialize all months in the range
         year = start_date.year
         month = start_date.month
         end_year = end_date.year
@@ -179,13 +219,11 @@ class GetBusinessReport(APIView):
                 'orders': 0
             }
 
-            # Move to next month
             month += 1
             if month > 12:
                 month = 1
                 year += 1
 
-        # Aggregate payment data
         for payment in payments:
             month_key = payment.created_at.strftime('%Y-%m')
             if month_key in monthly_data:
@@ -197,10 +235,18 @@ class GetBusinessReport(APIView):
 
     def calculate_growth(self, previous, current):
         if previous == 0:
-            return 0 if current == 0 else 100
-        return ((current - previous) / previous) * 100
+            return 100.0 if current > 0 else 0.0
+        try:
+            growth = ((current - previous) / previous) * 100
+            return round(growth, 2) if abs(growth) != float('inf') else 0.0
+        except (ZeroDivisionError, TypeError, ValueError):
+            return 0.0
 
     def calculate_profit_margin(self, revenue, profit):
-        if revenue == 0:
-            return 0
-        return (profit / revenue) * 100
+        if revenue == 0 or revenue is None:
+            return 0.0
+        try:
+            margin = (profit / revenue) * 100
+            return round(margin, 2) if abs(margin) != float('inf') else 0.0
+        except (ZeroDivisionError, TypeError, ValueError):
+            return 0.0

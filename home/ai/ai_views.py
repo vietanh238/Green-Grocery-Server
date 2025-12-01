@@ -4,6 +4,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework import status
 from django.db.models import Sum, F
 from datetime import datetime, timedelta
+import traceback
 from .ai_service import ai_forecast_service
 from core.models import Product, Category
 from core.models import Order, OrderItem
@@ -41,12 +42,7 @@ class TrainAIModelView(APIView):
                 ).select_related('product')
 
                 for item in order_items:
-                    # Check if product exists and has valid data
-                    if not item.product:
-                        skipped_items += 1
-                        continue
-
-                    if not item.product.id:
+                    if not item.product or not item.product.id:
                         skipped_items += 1
                         continue
 
@@ -57,8 +53,7 @@ class TrainAIModelView(APIView):
                             'total_amount': float(item.quantity * item.unit_price),
                             'created_at': order.created_at.isoformat()
                         })
-                    except (ValueError, TypeError) as e:
-                        print(f"Error processing order item {item.id}: {str(e)}")
+                    except (ValueError, TypeError):
                         skipped_items += 1
                         continue
 
@@ -97,10 +92,7 @@ class TrainAIModelView(APIView):
                 }, status=status.HTTP_400_BAD_REQUEST)
 
         except Exception as ex:
-            import traceback
             error_trace = traceback.format_exc()
-            print(f"Train AI error: {error_trace}")
-
             return Response({
                 'status': '2',
                 'response': {
@@ -166,7 +158,6 @@ class GetReorderRecommendationsView(APIView):
                 try:
                     product_sales = [s for s in all_sales if s['product_id'] == product.id]
 
-                    # Skip if no sales history
                     if len(product_sales) < 1:
                         continue
 
@@ -187,51 +178,58 @@ class GetReorderRecommendationsView(APIView):
                         lead_time_days=7
                     )
 
-                    if recommendation and recommendation['should_reorder']:
-                        recommendation['product_name'] = product.name
-                        recommendation['product_sku'] = product.sku
-                        recommendation['product_image'] = product.image if hasattr(product, 'image') else ''
-                        recommendation['unit'] = product.unit
-                        recommendation['cost_price'] = float(product.cost_price) if product.cost_price else 0
-                        recommendation['estimated_cost'] = round(
-                            recommendation['optimal_order_quantity'] * float(product.cost_price if product.cost_price else 0),
-                            2
-                        )
+                    if recommendation and recommendation.get('should_reorder', False):
+                        recommendation['product_id'] = product.id
+                        recommendation['product_name'] = product.name or 'N/A'
+                        recommendation['product_sku'] = product.sku or ''
+                        recommendation['product_image'] = getattr(product, 'image', '') or ''
+                        recommendation['unit'] = product.unit or 'cái'
+                        recommendation['cost_price'] = float(product.cost_price) if product.cost_price else 0.0
+
+                        optimal_qty = float(recommendation.get('optimal_order_quantity', 0)) or 0
+                        cost_price = float(product.cost_price) if product.cost_price else 0.0
+                        recommendation['estimated_cost'] = round(max(0, optimal_qty * cost_price), 2)
+
+                        recommendation['current_stock'] = int(product.stock_quantity) if product.stock_quantity else 0
+                        recommendation['optimal_order_quantity'] = float(recommendation.get('optimal_order_quantity', 0)) or 0
+                        recommendation['predicted_demand_7_days'] = float(recommendation.get('predicted_demand_7_days', 0)) or 0
+                        recommendation['predicted_demand_30_days'] = float(recommendation.get('predicted_demand_30_days', 0)) or 0
+                        recommendation['days_until_stockout'] = int(recommendation.get('days_until_stockout', 999)) or 999
+                        recommendation['urgency'] = recommendation.get('urgency', 'low')
+                        recommendation['recommendation'] = recommendation.get('recommendation', 'Không có khuyến nghị')
+
                         recommendations.append(recommendation)
 
-                except Exception as product_error:
-                    print(f"Error processing product {product.id}: {str(product_error)}")
+                except Exception:
                     continue
 
-            # Sort by urgency
             urgency_order = {'critical': 0, 'high': 1, 'medium': 2, 'low': 3}
             recommendations.sort(key=lambda x: (
                 urgency_order.get(x.get('urgency', 'low'), 3),
                 x.get('days_until_stockout', 999)
             ))
 
-            total_estimated_cost = sum(r.get('estimated_cost', 0) for r in recommendations)
+            total_estimated_cost = sum(float(r.get('estimated_cost', 0) or 0) for r in recommendations)
+
+            summary = {
+                'total_products_need_reorder': len(recommendations),
+                'critical_urgency': len([r for r in recommendations if r.get('urgency') == 'critical']),
+                'high_urgency': len([r for r in recommendations if r.get('urgency') == 'high']),
+                'medium_urgency': len([r for r in recommendations if r.get('urgency') == 'medium']),
+                'low_urgency': len([r for r in recommendations if r.get('urgency') == 'low']),
+                'total_estimated_cost': round(total_estimated_cost, 2)
+            }
 
             return Response({
                 'status': '1',
                 'response': {
                     'recommendations': recommendations,
-                    'summary': {
-                        'total_products_need_reorder': len(recommendations),
-                        'critical_urgency': len([r for r in recommendations if r.get('urgency') == 'critical']),
-                        'high_urgency': len([r for r in recommendations if r.get('urgency') == 'high']),
-                        'medium_urgency': len([r for r in recommendations if r.get('urgency') == 'medium']),
-                        'low_urgency': len([r for r in recommendations if r.get('urgency') == 'low']),
-                        'total_estimated_cost': total_estimated_cost
-                    }
+                    'summary': summary
                 }
             }, status=status.HTTP_200_OK)
 
         except Exception as ex:
-            import traceback
             error_trace = traceback.format_exc()
-            print(f"Reorder recommendations error: {error_trace}")
-
             return Response({
                 'status': '2',
                 'response': {
@@ -247,7 +245,6 @@ class GetProductForecastView(APIView):
 
     def get(self, request, product_id):
         try:
-
             try:
                 product = Product.objects.get(id=product_id, created_by=request.user, is_active=True)
             except Product.DoesNotExist:
@@ -280,8 +277,7 @@ class GetProductForecastView(APIView):
                                 'total_amount': float(item.quantity * item.unit_price),
                                 'created_at': order.created_at.isoformat()
                             })
-                        except (ValueError, TypeError) as e:
-                            print(f"Error processing order item: {str(e)}")
+                        except (ValueError, TypeError):
                             continue
 
             predictions = ai_forecast_service.predict_demand(
@@ -314,10 +310,7 @@ class GetProductForecastView(APIView):
             }, status=status.HTTP_200_OK)
 
         except Exception as ex:
-            import traceback
             error_trace = traceback.format_exc()
-            print(f"Product forecast error: {error_trace}")
-
             return Response({
                 'status': '2',
                 'response': {

@@ -4,8 +4,6 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework import status
 from django.db import transaction
 from django.utils import timezone
-from channels.layers import get_channel_layer
-from asgiref.sync import async_to_sync
 from decouple import config
 
 from core.models import Payment, Order, OrderItem, Product
@@ -34,11 +32,10 @@ class CreatePaymentView(APIView):
                 }, status=status.HTTP_400_BAD_REQUEST)
 
             data = serializer.validated_data
-            order_code_int = int(data['orderCode'])  # PayOS requires integer
-            order_code = str(order_code_int)  # For database storage
+            order_code_int = int(data['orderCode'])
+            order_code = str(order_code_int)
             amount = data['amount']
-            description = data.get(
-                'description', f'Thanh toán đơn hàng {order_code}')
+            description = data.get('description', f'Thanh toán đơn hàng {order_code}')
             return_url = data['returnUrl']
             cancel_url = data['cancelUrl']
             items_data = data['items']
@@ -74,7 +71,6 @@ class CreatePaymentView(APIView):
                 order_items = []
                 for item_data in items_data:
                     try:
-                        # Use select_for_update to prevent race condition
                         product = Product.objects.select_for_update().get(
                             bar_code=item_data['bar_code'],
                             is_active=True
@@ -115,7 +111,6 @@ class CreatePaymentView(APIView):
 
                 OrderItem.objects.bulk_create(order_items)
 
-                # Create payment with PayOS - NO FALLBACK
                 try:
                     payos_buyer = None
                     if buyer_name or buyer_phone:
@@ -126,7 +121,7 @@ class CreatePaymentView(APIView):
                         }
 
                     payos_res = create_payment_request(
-                        order_code=order_code_int,  # ✅ Send as integer for PayOS
+                        order_code=order_code_int,
                         amount=int(amount),
                         description=description,
                         return_url=return_url,
@@ -134,10 +129,7 @@ class CreatePaymentView(APIView):
                         buyer=payos_buyer
                     )
 
-                    print(f"✅ PayOS Response: {payos_res}")
-
                     if not payos_res or 'data' not in payos_res:
-                        # Delete order if PayOS fails
                         order.delete()
                         return Response({
                             'status': '2',
@@ -153,9 +145,7 @@ class CreatePaymentView(APIView):
                     checkout_url = payos_data.get("checkoutUrl")
                     qr_code = payos_data.get("qrCode")
 
-                    # ✅ Check if QR code exists
                     if not qr_code or not checkout_url:
-                        # Delete order if PayOS doesn't return QR code
                         order.delete()
                         return Response({
                             'status': '2',
@@ -167,8 +157,6 @@ class CreatePaymentView(APIView):
                         }, status=status.HTTP_502_BAD_GATEWAY)
 
                 except Exception as e:
-                    print(f"❌ PayOS Error: {str(e)}")
-                    # Delete order if PayOS fails
                     order.delete()
                     return Response({
                         'status': '2',
@@ -206,6 +194,15 @@ class CreatePaymentView(APIView):
                     }
                 }, status=status.HTTP_201_CREATED)
 
+        except ValueError as ve:
+            return Response({
+                'status': '2',
+                'response': {
+                    'error_code': '006',
+                    'error_message_us': str(ve),
+                    'error_message_vn': str(ve)
+                }
+            }, status=status.HTTP_400_BAD_REQUEST)
         except Exception as ex:
             return Response({
                 'status': '2',

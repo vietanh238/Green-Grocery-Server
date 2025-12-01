@@ -8,6 +8,7 @@ from channels.layers import get_channel_layer
 from asgiref.sync import async_to_sync
 from decimal import Decimal
 import time
+import traceback
 
 from core.models import Payment, Order, OrderItem, Product
 from core.services.inventory_service import InventoryService
@@ -40,7 +41,6 @@ class CashPaymentView(APIView):
 
             with transaction.atomic():
                 order_code = f"CASH{int(time.time() * 1000)}"
-
                 subtotal = sum(item['total_price'] for item in items_data)
 
                 order = Order.objects.create(
@@ -58,7 +58,7 @@ class CashPaymentView(APIView):
                 )
 
                 order_items = []
-                list_product_reorder = []
+                reorder_products = []
 
                 for item_data in items_data:
                     try:
@@ -67,19 +67,17 @@ class CashPaymentView(APIView):
                             is_active=True
                         )
 
-                        # ✅ Use InventoryService để track xuất kho
                         try:
                             inventory_result = InventoryService.export_stock(
                                 product_id=product.id,
                                 quantity=item_data['quantity'],
                                 unit_price=item_data['unit_price'],
                                 reference_type='order',
-                                reference_id=None,  # Will update after order saved
+                                reference_id=None,
                                 note=f"Bán hàng - Order: {order_code}",
                                 created_by=request.user if request.user.is_authenticated else None
                             )
 
-                            # Get updated product from inventory service
                             product = inventory_result['product']
 
                         except ValueError as ve:
@@ -99,14 +97,12 @@ class CashPaymentView(APIView):
                         )
                         order_items.append(order_item)
 
-                        # Update product sales stats
                         product.total_sold += int(item_data['quantity'])
                         product.total_revenue += Decimal(str(item_data['total_price']))
                         product.save()
 
-                        # Check reorder point
                         if product.stock_quantity <= product.reorder_point:
-                            list_product_reorder.append({
+                            reorder_products.append({
                                 'bar_code': product.bar_code,
                                 'name': product.name,
                                 'stock_quantity': product.stock_quantity,
@@ -114,7 +110,6 @@ class CashPaymentView(APIView):
                             })
 
                     except Product.DoesNotExist:
-                        # Product not found - create order item without inventory tracking
                         order_item = OrderItem(
                             order=order,
                             product=None,
@@ -145,65 +140,17 @@ class CashPaymentView(APIView):
                     updated_by=request.user if request.user.is_authenticated else None
                 )
 
-                # WebSocket notifications (optional - requires Redis)
-                try:
-                    channel_layer = get_channel_layer()
-                    print(f"🔌 Channel layer: {channel_layer}")
-
-                    if channel_layer:
-                        # Send payment success notification
-                        async_to_sync(channel_layer.group_send)(
-                            "broadcast",
-                            {
-                                "type": "payment_success",
-                                "data": {
-                                    "message_type": "payment_success",
-                                    "order_code": order_code,
-                                    "orderCode": order_code,
-                                    "amount": float(amount),
-                                    "payment_method": payment_method,
-                                    "paymentMethod": payment_method,
-                                    "message": f"Thanh toán {payment_method} thành công"
-                                }
-                            }
-                        )
-                        print(f"✅ Payment success notification sent: {order_code}")
-
-                        # Send low stock notification
-                        if list_product_reorder:
-                            print(f"🔔 Sending low stock alert for {len(list_product_reorder)} products")
-                            async_to_sync(channel_layer.group_send)(
-                                "broadcast",
-                                {
-                                    "type": "remind_reorder",
-                                    "data": {
-                                        'message_type': 'remind_reorder',
-                                        "items": list_product_reorder,
-                                        "count": len(list_product_reorder),
-                                        "message": f"Có {len(list_product_reorder)} sản phẩm sắp hết hàng"
-                                    }
-                                }
-                            )
-                            print(f"✅ Low stock notification sent: {list_product_reorder}")
-                        else:
-                            print("ℹ️ No products need reorder alert")
-                    else:
-                        print("⚠️ Channel layer is None - WebSocket not configured or Redis not running")
-                except Exception as ws_error:
-                    # WebSocket failed but payment still successful
-                    print(f"❌ WebSocket notification failed: {ws_error}")
-                    import traceback
-                    traceback.print_exc()
+                self._send_websocket_notifications(order_code, payment_method, amount, reorder_products)
 
                 return Response({
                     'status': '1',
                     'response': {
                         "order_code": order_code,
-                        "orderCode": order_code,  # Keep for backward compatibility
+                        "orderCode": order_code,
                         "amount": float(amount),
                         "status": "paid",
                         "payment_method": payment_method,
-                        "paymentMethod": payment_method,  # Keep for backward compatibility
+                        "paymentMethod": payment_method,
                         "message": "Thanh toán thành công"
                     }
                 }, status=status.HTTP_200_OK)
@@ -226,3 +173,43 @@ class CashPaymentView(APIView):
                     'error_message_vn': f'Lỗi hệ thống: {str(ex)}'
                 }
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    def _send_websocket_notifications(self, order_code: str, payment_method: str, amount: float, reorder_products: list):
+        try:
+            channel_layer = get_channel_layer()
+
+            if not channel_layer:
+                return
+
+            async_to_sync(channel_layer.group_send)(
+                "broadcast",
+                {
+                    "type": "payment_success",
+                    "data": {
+                        "message_type": "payment_success",
+                        "order_code": order_code,
+                        "orderCode": order_code,
+                        "amount": float(amount),
+                        "payment_method": payment_method,
+                        "paymentMethod": payment_method,
+                        "message": f"Thanh toán {payment_method} thành công"
+                    }
+                }
+            )
+
+            if reorder_products:
+                async_to_sync(channel_layer.group_send)(
+                    "broadcast",
+                    {
+                        "type": "remind_reorder",
+                        "data": {
+                            'message_type': 'remind_reorder',
+                            "items": reorder_products,
+                            "count": len(reorder_products),
+                            "message": f"Có {len(reorder_products)} sản phẩm sắp hết hàng"
+                        }
+                    }
+                )
+
+        except Exception as ws_error:
+            traceback.print_exc()
