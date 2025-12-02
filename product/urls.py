@@ -7,6 +7,7 @@ from .update_product.views import UpdateProductView
 from .delete_product.views import DeleteProductView
 from .bulk_create.views import BulkCreateProductsView
 from .get_supplier.views import GetSuppliersView, CreateSupplierView, UpdateSupplierView, DeleteSupplierView
+from .ai_invoice.views import ParseProductInvoiceImageView
 
 urlpatterns = [
     path('products/', GetProductView.as_view(), name='get-products'),
@@ -17,6 +18,7 @@ urlpatterns = [
          DeleteProductView.as_view(), name='delete-product'),
     path('bulk-create/', BulkCreateProductsView.as_view(),
          name='bulk-create-products'),
+    path('invoice/parse/', ParseProductInvoiceImageView.as_view(), name='parse-product-invoice'),
     path('suppliers/', GetSuppliersView.as_view(), name='get-suppliers'),
     path('supplier/create/', CreateSupplierView.as_view(), name='create-supplier'),
     path('supplier/update/', UpdateSupplierView.as_view(), name='update-supplier'),
