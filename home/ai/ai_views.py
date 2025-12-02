@@ -194,7 +194,11 @@ class GetReorderRecommendationsView(APIView):
                         recommendation['optimal_order_quantity'] = float(recommendation.get('optimal_order_quantity', 0)) or 0
                         recommendation['predicted_demand_7_days'] = float(recommendation.get('predicted_demand_7_days', 0)) or 0
                         recommendation['predicted_demand_30_days'] = float(recommendation.get('predicted_demand_30_days', 0)) or 0
-                        recommendation['days_until_stockout'] = int(recommendation.get('days_until_stockout', 999)) or 999
+                        days_until = recommendation.get('days_until_stockout')
+                        if days_until is None:
+                            recommendation['days_until_stockout'] = None
+                        else:
+                            recommendation['days_until_stockout'] = int(days_until) if days_until else None
                         recommendation['urgency'] = recommendation.get('urgency', 'low')
                         recommendation['recommendation'] = recommendation.get('recommendation', 'Không có khuyến nghị')
 

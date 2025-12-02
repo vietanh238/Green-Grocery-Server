@@ -307,9 +307,16 @@ class DemandForecastAI:
         demand_14_days = sum(p['predicted_quantity'] for p in predictions[:min(14, predictions_count)])
         demand_30_days = sum(p['predicted_quantity'] for p in predictions[:min(30, predictions_count)])
 
-        # Calculate daily average (avoid division by zero)
-        days_for_avg = min(7, predictions_count)
-        daily_avg = demand_7_days / days_for_avg if days_for_avg > 0 else 0
+        # Calculate daily average (prefer 30-day average for accuracy)
+        if predictions_count >= 30:
+            daily_avg = demand_30_days / 30
+        elif predictions_count >= 14:
+            daily_avg = demand_14_days / 14
+        elif predictions_count >= 7:
+            daily_avg = demand_7_days / 7
+        else:
+            days_for_avg = max(1, predictions_count)
+            daily_avg = demand_7_days / days_for_avg if days_for_avg > 0 else 0
 
         # Safety stock and reorder point
         safety_stock = daily_avg * 3
@@ -323,16 +330,23 @@ class DemandForecastAI:
             optimal_order_quantity = (demand_14_days / 14) * 30
         else:
             # Scale up available data to 30 days
-            optimal_order_quantity = (demand_7_days / days_for_avg) * 30 if days_for_avg > 0 else daily_avg * 30
+            optimal_order_quantity = daily_avg * 30 if daily_avg > 0 else 0
 
         # Calculate days until stockout
-        days_until_stockout = int(current_stock / daily_avg) if daily_avg > 0 else 999
+        if daily_avg <= 0 or daily_avg < 0.01:
+            days_until_stockout = None
+        else:
+            days_until_stockout = int(current_stock / daily_avg)
+            if days_until_stockout > 365:
+                days_until_stockout = 365
 
         # Reorder logic
         should_reorder = current_stock <= reorder_point
 
         # Urgency levels
-        if days_until_stockout <= 0:
+        if days_until_stockout is None:
+            urgency = 'low'
+        elif days_until_stockout <= 0:
             urgency = 'critical'
         elif days_until_stockout <= 3:
             urgency = 'high'
