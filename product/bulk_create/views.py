@@ -55,6 +55,7 @@ class BulkCreateProductsView(APIView):
             supplier_cache = {}
             products_to_create = []
             products_to_update = []
+            products_updated_via_import = set()
 
             for index, product_data in enumerate(products_data):
                 try:
@@ -75,6 +76,7 @@ class BulkCreateProductsView(APIView):
 
                         if product_data['quantity'] > 0:
                             try:
+                                existing_product.save()
                                 InventoryService.import_stock(
                                     product_id=existing_product.id,
                                     quantity=product_data['quantity'],
@@ -84,7 +86,6 @@ class BulkCreateProductsView(APIView):
                                     note=f'Nhập hàng hàng loạt - {product_data.get("name", "")}',
                                     created_by=user
                                 )
-                                existing_product.last_restock_date = timezone.now()
                             except Exception as inv_error:
                                 errors.append({
                                     'row': index + 1,
@@ -92,8 +93,9 @@ class BulkCreateProductsView(APIView):
                                     'sku': sku,
                                     'message': f'Lỗi nhập kho: {str(inv_error)}'
                                 })
+                        else:
+                            existing_product.save()
 
-                        products_to_update.append(existing_product)
                         update_count += 1
 
                     else:
@@ -189,10 +191,6 @@ class BulkCreateProductsView(APIView):
                                     'sku': product_data.get('sku', 'Unknown'),
                                     'message': f'Lỗi nhập kho: {str(inv_error)}'
                                 })
-
-                if products_to_update:
-                    for product in products_to_update:
-                        product.save()
 
             return Response({
                 'status': '1',
