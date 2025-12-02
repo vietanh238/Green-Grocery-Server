@@ -104,41 +104,41 @@ class PayDebit(APIView):
                     processed_debts = []
 
                     for debt in debts:
-                    if remaining_payment <= 0:
-                        break
+                        if remaining_payment <= 0:
+                            break
 
-                    remaining_debt = debt.debt_amount - debt.paid_amount
-                    payment_for_this_debt = min(
-                        remaining_payment, remaining_debt)
+                        remaining_debt = debt.debt_amount - debt.paid_amount
+                        payment_for_this_debt = min(
+                            remaining_payment, remaining_debt)
 
-                    debt.paid_amount += payment_for_this_debt
+                        debt.paid_amount += payment_for_this_debt
 
-                    if debt.paid_amount >= debt.debt_amount:
-                        debt.status = 'paid'
-                        debt.paid_at = now()
-                    elif debt.paid_amount > 0:
-                        debt.status = 'partial'
-                    else:
-                        debt.status = 'active'
+                        if debt.paid_amount >= debt.debt_amount:
+                            debt.status = 'paid'
+                            debt.paid_at = now()
+                        elif debt.paid_amount > 0:
+                            debt.status = 'partial'
+                        else:
+                            debt.status = 'active'
 
-                    if debt.due_date < now().date() and debt.status != 'paid':
-                        debt.status = 'overdue'
+                        if debt.due_date < now().date() and debt.status != 'paid':
+                            debt.status = 'overdue'
 
-                    debt.save()
+                        debt.save()
 
-                    DebtPayment.objects.create(
-                        payment_code=f"PAY_{uuid.uuid4().hex[:16].upper()}",
-                        debt=debt,
-                        amount=payment_for_this_debt,
-                        note=note,
-                        created_by=request.user
-                    )
+                        DebtPayment.objects.create(
+                            payment_code=f"PAY_{uuid.uuid4().hex[:16].upper()}",
+                            debt=debt,
+                            amount=payment_for_this_debt,
+                            note=note,
+                            created_by=request.user
+                        )
 
-                    processed_debts.append({
-                        'debt_code': debt.debt_code,
-                        'payment_amount': float(payment_for_this_debt),
-                        'remaining_after': float(debt.debt_amount - debt.paid_amount)
-                    })
+                        processed_debts.append({
+                            'debt_code': debt.debt_code,
+                            'payment_amount': float(payment_for_this_debt),
+                            'remaining_after': float(debt.debt_amount - debt.paid_amount)
+                        })
 
                         remaining_payment -= payment_for_this_debt
 
