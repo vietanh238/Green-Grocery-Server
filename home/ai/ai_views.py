@@ -168,7 +168,7 @@ class GetReorderRecommendationsView(APIView):
                         days_ahead=30
                     )
 
-                    if not predictions:
+                    if not predictions or len(predictions) == 0:
                         continue
 
                     recommendation = ai_forecast_service.calculate_reorder_recommendation(
@@ -178,7 +178,14 @@ class GetReorderRecommendationsView(APIView):
                         lead_time_days=7
                     )
 
-                    if recommendation and recommendation.get('should_reorder', False):
+                    if not recommendation:
+                        continue
+
+                    urgency = recommendation.get('urgency', 'low')
+                    should_reorder = recommendation.get('should_reorder', False)
+                    days_until = recommendation.get('days_until_stockout')
+
+                    if should_reorder or (urgency in ['critical', 'high'] and days_until is not None and days_until <= 7):
                         recommendation['product_id'] = product.id
                         recommendation['product_name'] = product.name or 'N/A'
                         recommendation['product_sku'] = product.sku or ''
@@ -194,12 +201,13 @@ class GetReorderRecommendationsView(APIView):
                         recommendation['optimal_order_quantity'] = float(recommendation.get('optimal_order_quantity', 0)) or 0
                         recommendation['predicted_demand_7_days'] = float(recommendation.get('predicted_demand_7_days', 0)) or 0
                         recommendation['predicted_demand_30_days'] = float(recommendation.get('predicted_demand_30_days', 0)) or 0
-                        days_until = recommendation.get('days_until_stockout')
+
                         if days_until is None:
                             recommendation['days_until_stockout'] = None
                         else:
                             recommendation['days_until_stockout'] = int(days_until) if days_until else None
-                        recommendation['urgency'] = recommendation.get('urgency', 'low')
+
+                        recommendation['urgency'] = urgency
                         recommendation['recommendation'] = recommendation.get('recommendation', 'Không có khuyến nghị')
 
                         recommendations.append(recommendation)

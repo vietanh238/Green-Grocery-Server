@@ -277,11 +277,15 @@ class DemandForecastAI:
         product_data = df[df['product_id'] == product_id]
 
         if len(product_data) == 0:
-            avg_daily = 5
+            avg_daily = 0.0
         else:
-            daily_sales = product_data.groupby(product_data['date'].dt.date)[
-                'quantity'].sum()
-            avg_daily = daily_sales.mean()
+            daily_sales = product_data.groupby(product_data['date'].dt.date)['quantity'].sum()
+            if len(daily_sales) > 0:
+                avg_daily = float(daily_sales.mean())
+                if pd.isna(avg_daily) or avg_daily < 0:
+                    avg_daily = 0.0
+            else:
+                avg_daily = 0.0
 
         predictions = []
         last_date = datetime.now()
@@ -290,7 +294,7 @@ class DemandForecastAI:
             pred_date = last_date + timedelta(days=day+1)
             predictions.append({
                 'date': pred_date.strftime('%Y-%m-%d'),
-                'predicted_quantity': round(avg_daily, 2)
+                'predicted_quantity': round(max(0, avg_daily), 2)
             })
 
         return predictions
@@ -299,61 +303,62 @@ class DemandForecastAI:
         if not predictions or len(predictions) == 0:
             return None
 
-        # Safely get demand with fallback to available predictions
         predictions_count = len(predictions)
 
-        # Calculate demands with safe slicing
         demand_7_days = sum(p['predicted_quantity'] for p in predictions[:min(7, predictions_count)])
         demand_14_days = sum(p['predicted_quantity'] for p in predictions[:min(14, predictions_count)])
         demand_30_days = sum(p['predicted_quantity'] for p in predictions[:min(30, predictions_count)])
 
-        # Calculate daily average (prefer 30-day average for accuracy)
         if predictions_count >= 30:
-            daily_avg = demand_30_days / 30
+            daily_avg = demand_30_days / 30.0
         elif predictions_count >= 14:
-            daily_avg = demand_14_days / 14
+            daily_avg = demand_14_days / 14.0
         elif predictions_count >= 7:
-            daily_avg = demand_7_days / 7
+            daily_avg = demand_7_days / 7.0
         else:
             days_for_avg = max(1, predictions_count)
-            daily_avg = demand_7_days / days_for_avg if days_for_avg > 0 else 0
+            daily_avg = demand_7_days / float(days_for_avg) if days_for_avg > 0 else 0.0
 
-        # Safety stock and reorder point
-        safety_stock = daily_avg * 3
-        reorder_point = (daily_avg * lead_time_days) + safety_stock
-
-        # If we have enough predictions, use 30-day demand, otherwise use what we have
-        if predictions_count >= 30:
-            optimal_order_quantity = demand_30_days
-        elif predictions_count >= 14:
-            # Scale up 14-day demand to 30 days
-            optimal_order_quantity = (demand_14_days / 14) * 30
-        else:
-            # Scale up available data to 30 days
-            optimal_order_quantity = daily_avg * 30 if daily_avg > 0 else 0
-
-        # Calculate days until stockout
         if daily_avg <= 0 or daily_avg < 0.01:
             days_until_stockout = None
-        else:
-            days_until_stockout = int(current_stock / daily_avg)
-            if days_until_stockout > 365:
-                days_until_stockout = 365
-
-        # Reorder logic
-        should_reorder = current_stock <= reorder_point
-
-        # Urgency levels
-        if days_until_stockout is None:
             urgency = 'low'
-        elif days_until_stockout <= 0:
-            urgency = 'critical'
-        elif days_until_stockout <= 3:
-            urgency = 'high'
-        elif days_until_stockout <= 7:
-            urgency = 'medium'
+            should_reorder = False
+            optimal_order_quantity = 0
+            reorder_point = 0
+            safety_stock = 0
         else:
-            urgency = 'low'
+            safety_stock = max(daily_avg * 3, 1)
+            reorder_point = (daily_avg * lead_time_days) + safety_stock
+
+            if predictions_count >= 30:
+                optimal_order_quantity = max(demand_30_days, 1)
+            elif predictions_count >= 14:
+                optimal_order_quantity = max((demand_14_days / 14.0) * 30, 1)
+            else:
+                optimal_order_quantity = max(daily_avg * 30, 1)
+
+            days_until_stockout = int(current_stock / daily_avg) if daily_avg > 0 else None
+            if days_until_stockout is not None:
+                if days_until_stockout > 365:
+                    days_until_stockout = 365
+                elif days_until_stockout < 0:
+                    days_until_stockout = 0
+
+            if days_until_stockout is None:
+                urgency = 'low'
+                should_reorder = False
+            elif days_until_stockout <= 0:
+                urgency = 'critical'
+                should_reorder = True
+            elif days_until_stockout <= 3:
+                urgency = 'high'
+                should_reorder = True
+            elif days_until_stockout <= 7:
+                urgency = 'medium'
+                should_reorder = current_stock <= reorder_point
+            else:
+                urgency = 'low'
+                should_reorder = current_stock <= reorder_point
 
         return {
             'product_id': product_id,
@@ -377,17 +382,31 @@ class DemandForecastAI:
         }
 
     def _generate_recommendation_text(self, should_reorder, days_until_stockout, order_qty, urgency='low'):
-        if should_reorder:
-            if urgency == 'critical':
-                return f'KHẨN CẤP! Đã hết hàng hoặc sắp hết. Nhập ngay {int(order_qty)} sản phẩm.'
-            elif days_until_stockout <= 3 or urgency == 'high':
+        if urgency == 'critical':
+            if days_until_stockout is not None and days_until_stockout <= 0:
+                return f'KHẨN CẤP! Đã hết hàng. Nhập ngay {int(order_qty)} sản phẩm.'
+            else:
+                return f'KHẨN CẤP! Sắp hết hàng. Nhập ngay {int(order_qty)} sản phẩm.'
+        elif urgency == 'high':
+            if days_until_stockout is not None:
                 return f'CẤP BÁC! Dự kiến hết hàng trong {days_until_stockout} ngày. Nên nhập ngay {int(order_qty)} sản phẩm.'
-            elif days_until_stockout <= 7 or urgency == 'medium':
+            else:
+                return f'CẤP BÁC! Cần nhập hàng ngay. Đề xuất nhập {int(order_qty)} sản phẩm.'
+        elif urgency == 'medium':
+            if days_until_stockout is not None:
                 return f'Cần nhập hàng sớm. Còn khoảng {days_until_stockout} ngày trước khi hết hàng. Đề xuất nhập {int(order_qty)} sản phẩm.'
+            else:
+                return f'Cần nhập hàng sớm. Đề xuất nhập {int(order_qty)} sản phẩm.'
+        elif should_reorder:
+            if days_until_stockout is not None:
+                return f'Nên chuẩn bị nhập hàng. Còn {days_until_stockout} ngày. Đề xuất nhập {int(order_qty)} sản phẩm cho 30 ngày tới.'
             else:
                 return f'Nên chuẩn bị nhập hàng. Đề xuất nhập {int(order_qty)} sản phẩm cho 30 ngày tới.'
         else:
-            return f'Tồn kho đủ dùng cho {days_until_stockout} ngày. Chưa cần nhập hàng.'
+            if days_until_stockout is not None:
+                return f'Tồn kho đủ dùng cho {days_until_stockout} ngày. Chưa cần nhập hàng.'
+            else:
+                return f'Tồn kho hiện tại đủ dùng. Chưa cần nhập hàng.'
 
     def save_model(self):
         if self.model:
