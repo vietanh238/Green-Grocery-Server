@@ -212,6 +212,9 @@ class DemandForecastAI:
             }
 
     def predict_demand(self, product_id, current_stock, sales_history, days_ahead=30):
+        if not sales_history:
+            return self._fallback_prediction(product_id, current_stock, sales_history, days_ahead)
+
         if not self.model:
             return self._fallback_prediction(product_id, current_stock, sales_history, days_ahead)
 
@@ -220,34 +223,42 @@ class DemandForecastAI:
 
         product_data = df[df['product_id'] == product_id].sort_values('date')
 
-        if len(product_data) < 7:
+        if len(product_data) < 1:
             return self._fallback_prediction(product_id, current_stock, sales_history, days_ahead)
 
-        daily_sales = product_data.groupby(product_data['date'].dt.date)[
-            'quantity'].sum()
+        daily_sales = product_data.groupby(product_data['date'].dt.date)['quantity'].sum()
         daily_sales.index = pd.to_datetime(daily_sales.index)
         daily_sales = daily_sales.asfreq('D', fill_value=0)
+
+        if len(daily_sales) < 7:
+            return self._fallback_prediction(product_id, current_stock, sales_history, days_ahead)
 
         predictions = []
         current_data = daily_sales.copy()
 
-        for day in range(days_ahead):
+        for day in range(min(days_ahead, 30)):
             if len(current_data) < 7:
                 break
 
-            features = self._extract_features_for_prediction(
-                current_data, len(current_data) - 1)
-            features_scaled = self.scaler.transform([features])
+            try:
+                features = self._extract_features_for_prediction(
+                    current_data, len(current_data) - 1)
+                features_scaled = self.scaler.transform([features])
 
-            pred_quantity = max(0, self.model.predict(features_scaled)[0])
+                pred_quantity = max(0, float(self.model.predict(features_scaled)[0]))
 
-            pred_date = current_data.index[-1] + timedelta(days=1)
-            predictions.append({
-                'date': pred_date.strftime('%Y-%m-%d'),
-                'predicted_quantity': round(pred_quantity, 2)
-            })
+                pred_date = current_data.index[-1] + timedelta(days=1)
+                predictions.append({
+                    'date': pred_date.strftime('%Y-%m-%d'),
+                    'predicted_quantity': round(pred_quantity, 2)
+                })
 
-            current_data.loc[pred_date] = pred_quantity
+                current_data.loc[pred_date] = pred_quantity
+            except Exception:
+                break
+
+        if not predictions:
+            return self._fallback_prediction(product_id, current_stock, sales_history, days_ahead)
 
         return predictions
 
@@ -304,10 +315,11 @@ class DemandForecastAI:
             return None
 
         predictions_count = len(predictions)
+        current_stock = max(0, int(current_stock) if current_stock else 0)
 
-        demand_7_days = sum(p['predicted_quantity'] for p in predictions[:min(7, predictions_count)])
-        demand_14_days = sum(p['predicted_quantity'] for p in predictions[:min(14, predictions_count)])
-        demand_30_days = sum(p['predicted_quantity'] for p in predictions[:min(30, predictions_count)])
+        demand_7_days = sum(max(0, p.get('predicted_quantity', 0)) for p in predictions[:min(7, predictions_count)])
+        demand_14_days = sum(max(0, p.get('predicted_quantity', 0)) for p in predictions[:min(14, predictions_count)])
+        demand_30_days = sum(max(0, p.get('predicted_quantity', 0)) for p in predictions[:min(30, predictions_count)])
 
         if predictions_count >= 30:
             daily_avg = demand_30_days / 30.0
@@ -319,21 +331,31 @@ class DemandForecastAI:
             days_for_avg = max(1, predictions_count)
             daily_avg = demand_7_days / float(days_for_avg) if days_for_avg > 0 else 0.0
 
+        daily_avg = max(0.0, daily_avg)
+
         if daily_avg <= 0 or daily_avg < 0.01:
-            days_until_stockout = None
-            urgency = 'low'
-            should_reorder = False
-            optimal_order_quantity = 0
-            reorder_point = 0
-            safety_stock = 0
+            if current_stock <= 0:
+                days_until_stockout = 0
+                urgency = 'critical'
+                should_reorder = True
+                optimal_order_quantity = 10
+                reorder_point = 10
+                safety_stock = 10
+            else:
+                days_until_stockout = None
+                urgency = 'low'
+                should_reorder = False
+                optimal_order_quantity = 0
+                reorder_point = 0
+                safety_stock = 0
         else:
             safety_stock = max(daily_avg * 3, 1)
-            reorder_point = (daily_avg * lead_time_days) + safety_stock
+            reorder_point = max((daily_avg * lead_time_days) + safety_stock, 1)
 
             if predictions_count >= 30:
-                optimal_order_quantity = max(demand_30_days, 1)
+                optimal_order_quantity = max(demand_30_days, daily_avg * 30, 1)
             elif predictions_count >= 14:
-                optimal_order_quantity = max((demand_14_days / 14.0) * 30, 1)
+                optimal_order_quantity = max((demand_14_days / 14.0) * 30, daily_avg * 30, 1)
             else:
                 optimal_order_quantity = max(daily_avg * 30, 1)
 
@@ -344,9 +366,12 @@ class DemandForecastAI:
                 elif days_until_stockout < 0:
                     days_until_stockout = 0
 
-            if days_until_stockout is None:
+            if current_stock <= 0:
+                urgency = 'critical'
+                should_reorder = True
+            elif days_until_stockout is None:
                 urgency = 'low'
-                should_reorder = False
+                should_reorder = current_stock <= reorder_point
             elif days_until_stockout <= 0:
                 urgency = 'critical'
                 should_reorder = True
