@@ -5,6 +5,7 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.ensemble import RandomForestRegressor
 import joblib
 import os
+import math
 from django.conf import settings
 
 
@@ -289,23 +290,66 @@ class DemandForecastAI:
 
         if len(product_data) == 0:
             avg_daily = 0.0
+            std_daily = 0.0
+            weekday_avg = 0.0
+            weekend_avg = 0.0
         else:
             daily_sales = product_data.groupby(product_data['date'].dt.date)['quantity'].sum()
             if len(daily_sales) > 0:
                 avg_daily = float(daily_sales.mean())
+                std_daily = float(daily_sales.std()) if len(daily_sales) > 1 else 0.0
                 if pd.isna(avg_daily) or avg_daily < 0:
                     avg_daily = 0.0
+                if pd.isna(std_daily) or std_daily < 0:
+                    std_daily = 0.0
+
+                # Tính trung bình theo ngày trong tuần
+                df_with_weekday = df[df['product_id'] == product_id].copy()
+                df_with_weekday['weekday'] = df_with_weekday['date'].dt.dayofweek
+                df_with_weekday['is_weekend'] = df_with_weekday['weekday'] >= 5
+
+                weekday_sales = df_with_weekday[~df_with_weekday['is_weekend']].groupby(df_with_weekday[~df_with_weekday['is_weekend']]['date'].dt.date)['quantity'].sum()
+                weekend_sales = df_with_weekday[df_with_weekday['is_weekend']].groupby(df_with_weekday[df_with_weekday['is_weekend']]['date'].dt.date)['quantity'].sum()
+
+                weekday_avg = float(weekday_sales.mean()) if len(weekday_sales) > 0 else avg_daily
+                weekend_avg = float(weekend_sales.mean()) if len(weekend_sales) > 0 else avg_daily
+
+                if pd.isna(weekday_avg) or weekday_avg < 0:
+                    weekday_avg = avg_daily
+                if pd.isna(weekend_avg) or weekend_avg < 0:
+                    weekend_avg = avg_daily
             else:
                 avg_daily = 0.0
+                std_daily = 0.0
+                weekday_avg = 0.0
+                weekend_avg = 0.0
 
         predictions = []
         last_date = datetime.now()
 
         for day in range(days_ahead):
             pred_date = last_date + timedelta(days=day+1)
+            day_of_week = pred_date.weekday()  # 0=Monday, 6=Sunday
+            is_weekend = day_of_week >= 5
+
+            # Sử dụng trung bình cuối tuần hoặc ngày thường
+            if is_weekend and weekend_avg > 0:
+                base_prediction = weekend_avg
+            elif not is_weekend and weekday_avg > 0:
+                base_prediction = weekday_avg
+            else:
+                base_prediction = avg_daily
+
+            # Thêm một chút biến động ngẫu nhiên dựa trên độ lệch chuẩn (tối đa ±20%)
+            if std_daily > 0 and avg_daily > 0:
+                variation = np.random.normal(0, min(std_daily * 0.3, avg_daily * 0.2))
+                predicted_quantity = max(0, base_prediction + variation)
+            else:
+                predicted_quantity = max(0, base_prediction)
+
             predictions.append({
                 'date': pred_date.strftime('%Y-%m-%d'),
-                'predicted_quantity': round(max(0, avg_daily), 2)
+                'predicted_quantity': round(predicted_quantity, 2)
             })
 
         return predictions
@@ -368,7 +412,12 @@ class DemandForecastAI:
             else:
                 optimal_order_quantity = max(daily_avg * 30, 1)
 
-            days_until_stockout = int(current_stock / daily_avg) if daily_avg > 0 else 999
+            # Tính số ngày còn lại: làm tròn lên để tránh hiển thị 0 khi còn < 1 ngày
+            if daily_avg > 0:
+                days_until_stockout = math.ceil(current_stock / daily_avg)
+            else:
+                days_until_stockout = 999
+
             if days_until_stockout > 365:
                 days_until_stockout = 365
             elif days_until_stockout < 0:
