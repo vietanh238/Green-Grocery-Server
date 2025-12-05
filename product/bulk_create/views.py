@@ -182,8 +182,7 @@ class BulkCreateProductsView(APIView):
                                     note=f'Tồn kho đầu - Nhập hàng hàng loạt: {product_data.get("name", "")}',
                                     created_by=user
                                 )
-                                created_product.last_restock_date = timezone.now()
-                                created_product.save()
+                                # import_stock() already updates last_restock_date, no need to save again
                             except Exception as inv_error:
                                 errors.append({
                                     'row': idx + 1,

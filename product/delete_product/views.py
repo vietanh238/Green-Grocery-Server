@@ -2,7 +2,8 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from rest_framework import status
-from core.models import Product
+from django.db import transaction
+from core.models import Product, InventoryTransaction, PurchaseOrderItem
 
 
 class DeleteProductView(APIView):
@@ -14,7 +15,7 @@ class DeleteProductView(APIView):
 
             try:
                 product = Product.objects.get(
-                    bar_code=bar_code, is_active=True)
+                    bar_code=bar_code, is_active=True, created_by=user)
             except Product.DoesNotExist:
                 return Response({
                     'status': '2',
@@ -25,9 +26,31 @@ class DeleteProductView(APIView):
                     }
                 }, status=status.HTTP_404_NOT_FOUND)
 
-            product.is_active = False
-            product.updated_by = user
-            product.save()
+            with transaction.atomic():
+                inventory_transactions = InventoryTransaction.objects.filter(product=product)
+                purchase_order_items = PurchaseOrderItem.objects.filter(product=product)
+
+                active_purchase_orders = purchase_order_items.filter(
+                    purchase_order__status__in=['draft', 'pending', 'approved']
+                )
+
+                if active_purchase_orders.exists():
+                    return Response({
+                        'status': '2',
+                        'response': {
+                            'error_code': '006',
+                            'error_message_us': 'Product is in active purchase orders',
+                            'error_message_vn': 'Không thể xóa sản phẩm vì đang có trong đơn nhập hàng chưa hoàn thành. Vui lòng hoàn thành hoặc hủy đơn nhập hàng trước.'
+                        }
+                    }, status=status.HTTP_400_BAD_REQUEST)
+
+                inventory_transactions.delete()
+                purchase_order_items.delete()
+
+                product.is_active = False
+                product.updated_by = user
+                product.save()
+                product.delete()
 
             return Response({
                 'status': '1',

@@ -81,7 +81,7 @@ class CreateProductView(APIView):
                     unit=data['unit'],
                     cost_price=data['costPrice'],
                     price=data['price'],
-                    stock_quantity=0,  # Start with 0
+                    stock_quantity=0,
                     reorder_point=data['reorderPoint'],
                     max_stock_level=data['maxStockLevel'],
                     image=data.get('image', ''),
@@ -105,8 +105,8 @@ class CreateProductView(APIView):
                         note='Tồn kho đầu - Tạo sản phẩm mới',
                         user=user
                     )
-                    product.last_restock_date = timezone.now()
-                    product.save()
+                    # Refresh product from DB to get updated stock_quantity
+                    product.refresh_from_db()
 
             product_data = ProductListSerializer(product).data
 
