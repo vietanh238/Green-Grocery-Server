@@ -185,7 +185,7 @@ class GetReorderRecommendationsView(APIView):
                     should_reorder = recommendation.get('should_reorder', False)
                     days_until = recommendation.get('days_until_stockout')
 
-                    if should_reorder or (urgency in ['critical', 'high'] and days_until is not None and days_until <= 7):
+                    if should_reorder or (urgency in ['critical', 'high'] and days_until is not None and days_until < 999 and days_until <= 7):
                         recommendation['product_id'] = product.id
                         recommendation['product_name'] = product.name or 'N/A'
                         recommendation['product_sku'] = product.sku or ''
@@ -203,9 +203,9 @@ class GetReorderRecommendationsView(APIView):
                         recommendation['predicted_demand_30_days'] = float(recommendation.get('predicted_demand_30_days', 0)) or 0
 
                         if days_until is None:
-                            recommendation['days_until_stockout'] = None
+                            recommendation['days_until_stockout'] = 999
                         else:
-                            recommendation['days_until_stockout'] = int(days_until) if days_until else None
+                            recommendation['days_until_stockout'] = int(days_until) if days_until is not None else 999
 
                         recommendation['urgency'] = urgency
                         recommendation['recommendation'] = recommendation.get('recommendation', 'Không có khuyến nghị')

@@ -333,21 +333,30 @@ class DemandForecastAI:
 
         daily_avg = max(0.0, daily_avg)
 
-        if daily_avg <= 0 or daily_avg < 0.01:
-            if current_stock <= 0:
-                days_until_stockout = 0
-                urgency = 'critical'
-                should_reorder = True
+        if current_stock <= 0:
+            days_until_stockout = 0
+            urgency = 'critical'
+            should_reorder = True
+            if daily_avg <= 0 or daily_avg < 0.01:
                 optimal_order_quantity = 10
                 reorder_point = 10
                 safety_stock = 10
             else:
-                days_until_stockout = None
-                urgency = 'low'
-                should_reorder = False
-                optimal_order_quantity = 0
-                reorder_point = 0
-                safety_stock = 0
+                safety_stock = max(daily_avg * 3, 1)
+                reorder_point = max((daily_avg * lead_time_days) + safety_stock, 1)
+                if predictions_count >= 30:
+                    optimal_order_quantity = max(demand_30_days, daily_avg * 30, 1)
+                elif predictions_count >= 14:
+                    optimal_order_quantity = max((demand_14_days / 14.0) * 30, daily_avg * 30, 1)
+                else:
+                    optimal_order_quantity = max(daily_avg * 30, 1)
+        elif daily_avg <= 0 or daily_avg < 0.01:
+            days_until_stockout = 999
+            urgency = 'low'
+            should_reorder = False
+            optimal_order_quantity = 0
+            reorder_point = 0
+            safety_stock = 0
         else:
             safety_stock = max(daily_avg * 3, 1)
             reorder_point = max((daily_avg * lead_time_days) + safety_stock, 1)
@@ -359,20 +368,13 @@ class DemandForecastAI:
             else:
                 optimal_order_quantity = max(daily_avg * 30, 1)
 
-            days_until_stockout = int(current_stock / daily_avg) if daily_avg > 0 else None
-            if days_until_stockout is not None:
-                if days_until_stockout > 365:
-                    days_until_stockout = 365
-                elif days_until_stockout < 0:
-                    days_until_stockout = 0
+            days_until_stockout = int(current_stock / daily_avg) if daily_avg > 0 else 999
+            if days_until_stockout > 365:
+                days_until_stockout = 365
+            elif days_until_stockout < 0:
+                days_until_stockout = 0
 
-            if current_stock <= 0:
-                urgency = 'critical'
-                should_reorder = True
-            elif days_until_stockout is None:
-                urgency = 'low'
-                should_reorder = current_stock <= reorder_point
-            elif days_until_stockout <= 0:
+            if days_until_stockout <= 0:
                 urgency = 'critical'
                 should_reorder = True
             elif days_until_stockout <= 3:
@@ -413,25 +415,25 @@ class DemandForecastAI:
             else:
                 return f'KHẨN CẤP! Sắp hết hàng. Nhập ngay {int(order_qty)} sản phẩm.'
         elif urgency == 'high':
-            if days_until_stockout is not None:
+            if days_until_stockout is not None and days_until_stockout < 999:
                 return f'CẤP BÁC! Dự kiến hết hàng trong {days_until_stockout} ngày. Nên nhập ngay {int(order_qty)} sản phẩm.'
             else:
                 return f'CẤP BÁC! Cần nhập hàng ngay. Đề xuất nhập {int(order_qty)} sản phẩm.'
         elif urgency == 'medium':
-            if days_until_stockout is not None:
+            if days_until_stockout is not None and days_until_stockout < 999:
                 return f'Cần nhập hàng sớm. Còn khoảng {days_until_stockout} ngày trước khi hết hàng. Đề xuất nhập {int(order_qty)} sản phẩm.'
             else:
                 return f'Cần nhập hàng sớm. Đề xuất nhập {int(order_qty)} sản phẩm.'
         elif should_reorder:
-            if days_until_stockout is not None:
+            if days_until_stockout is not None and days_until_stockout < 999:
                 return f'Nên chuẩn bị nhập hàng. Còn {days_until_stockout} ngày. Đề xuất nhập {int(order_qty)} sản phẩm cho 30 ngày tới.'
             else:
                 return f'Nên chuẩn bị nhập hàng. Đề xuất nhập {int(order_qty)} sản phẩm cho 30 ngày tới.'
         else:
-            if days_until_stockout is not None:
+            if days_until_stockout is not None and days_until_stockout < 999:
                 return f'Tồn kho đủ dùng cho {days_until_stockout} ngày. Chưa cần nhập hàng.'
             else:
-                return f'Tồn kho hiện tại đủ dùng. Chưa cần nhập hàng.'
+                return f'Tồn kho đủ dùng lâu dài. Không có nhu cầu hoặc tồn kho rất lớn. Chưa cần nhập hàng.'
 
     def save_model(self):
         if self.model:
